@@ -1,13 +1,27 @@
-# nifi-signal-messeger
+# nifi-signal-messenger
 
 nifi-signal-messenger is a [NiFi](https://nifi.apache.org) extension that makes it possible to
-send and receive [Signal](https://signal.org/) messages. This extension uses the configuration directory
+send and receive [Signal](https://signal.org/) messages in NiFi. This extension uses the configuration directory
 that [signal-cli](https://github.com/AsamK/signal-cli) produces and is therefore highly dependent on 
-signal-cli.
+signal-cli. You can use either linked or registered numbers with this extension.
 
 ## Getting started
 
-## Building
+### Setup a signal-cli configuration
+This NiFi extension needs an existing signal-cli configuration in order to start and work properly.
+So the first thing you'll need to do (if you don't already have a signal-cli configuration directory) is to
+download and install signal-cli v0.6.5 [which is really well describes in this how-to](https://github.com/AsamK/signal-cli/wiki/HowToUbuntu).
+Then either register a number (as described in the how-to) or make a link to an existing number.
+In order to control where the configuration directory is stored use the '--config' param. This
+path needs to be accessed by NiFi later on.
+
+### Create a controller service in NiFi
+--- TODO ---
+
+### Add processors
+--- TODO ---
+
+## Building from source
 
 This project uses the signal-cli-jar to correctly parse and use the configuration used by signal-cli.
 The jar is not published to any public repository so you'll need to make sure maven can find
