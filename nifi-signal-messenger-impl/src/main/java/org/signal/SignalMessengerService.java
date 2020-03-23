@@ -1,0 +1,187 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.signal;
+
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.security.Security;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.annotation.lifecycle.OnDisabled;
+import org.apache.nifi.annotation.lifecycle.OnEnabled;
+import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.controller.AbstractControllerService;
+import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.reporting.InitializationException;
+import org.asamk.signal.AttachmentInvalidException;
+import org.asamk.signal.manager.Manager;
+import org.asamk.signal.storage.SignalAccount;
+import org.asamk.signal.util.SecurityProvider;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.whispersystems.signalservice.api.SignalServiceAccountManager;
+import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
+import org.whispersystems.signalservice.api.messages.SignalServiceContent;
+import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
+import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
+
+@Tags({ "Signal", "Messenger"})
+@CapabilityDescription("Signal Messenger service")
+public class SignalMessengerService extends AbstractControllerService implements SignalControllerService {
+
+	static {
+		Security.insertProviderAt(new SecurityProvider(), 1);
+	    Security.addProvider(new BouncyCastleProvider());
+	}
+
+    public static final PropertyDescriptor PROP_STORE_PATH = new PropertyDescriptor
+            .Builder().name("StorePath")
+            .displayName("Store path")
+            .description("Path where signal-cli stores the data")
+            .required(true)
+            .addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
+            .build();
+
+    public static final PropertyDescriptor PROP_NUMBER = new PropertyDescriptor
+            .Builder().name("Number")
+            .displayName("Number (username)")
+            .description("User name for signal, usually the number in form +<country_code><number>")
+            .required(true)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+
+    private static final List<PropertyDescriptor> properties;
+
+	private Manager manager;
+
+	private SignalAccount account;
+
+	@SuppressWarnings("unused")
+	private SignalServiceAccountManager accountManager;
+
+	private String number;
+
+	private Method methodDecrypt;
+
+    static {
+        final List<PropertyDescriptor> props = new ArrayList<>();
+        props.add(PROP_STORE_PATH);
+        props.add(PROP_NUMBER);
+        properties = Collections.unmodifiableList(props);
+    }
+
+    @Override
+    protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+        return properties;
+    }
+
+    /**
+     * @param context
+     *            the configuration context
+     * @throws InitializationException
+     *             if unable to create a database connection
+     */
+    @OnEnabled
+    public void onEnabled(final ConfigurationContext context) throws InitializationException {
+    	String storeFile = context.getProperty(PROP_STORE_PATH).getValue();
+    	number = context.getProperty(PROP_NUMBER).getValue();
+    	
+    	try {
+			manager = new Manager(number, storeFile);
+			manager.init();
+			
+			if(!manager.isRegistered()) {
+				throw new InitializationException("Signal manager still not registered");
+			}
+			
+			//Test
+			getMessageReceiver();
+			
+			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
+			methodDecrypt.setAccessible(true);
+			
+			Field fieldAccount = Manager.class.getDeclaredField("account");
+			fieldAccount.setAccessible(true);
+		    account = (SignalAccount) fieldAccount.get(manager);
+		    
+			Field fieldAccountManager = Manager.class.getDeclaredField("accountManager");
+			fieldAccountManager.setAccessible(true);
+		    accountManager = (SignalServiceAccountManager) fieldAccountManager.get(manager);
+
+		} catch (IOException e) {
+			throw new InitializationException(e.getMessage(), e);
+		} catch (NoSuchMethodException e) {
+			throw new InitializationException(e.getMessage(), e);
+		} catch (SecurityException e) {
+			throw new InitializationException(e.getMessage(), e);
+		} catch (IllegalAccessException e) {
+			throw new InitializationException(e.getMessage(), e);
+		} catch (IllegalArgumentException e) {
+			throw new InitializationException(e.getMessage(), e);
+		} catch (InvocationTargetException e) {
+			throw new InitializationException(e.getMessage(), e);
+		} catch (NoSuchFieldException e) {
+			throw new InitializationException(e.getMessage(), e);
+		}
+    }
+
+	public SignalServiceMessageReceiver getMessageReceiver() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+		Method methodGetMessageReceiver = Manager.class.getDeclaredMethod("getMessageReceiver");
+		methodGetMessageReceiver.setAccessible(true);
+		SignalServiceMessageReceiver messageReceiver = (SignalServiceMessageReceiver) methodGetMessageReceiver.invoke(manager);
+		return messageReceiver;
+	}
+
+    @OnDisabled
+    public void shutdown() {
+    }
+
+	public void sendMessage(List<String> address, String body) throws ProcessException, IOException {
+		try {
+			manager.sendMessage(body, Collections.emptyList(), address);
+		} catch (AttachmentInvalidException e) {
+			throw new ProcessException(e);
+		} catch (EncapsulatedExceptions e) {
+			throw new ProcessException(e);
+		}
+	}
+
+	@Override
+	public String getSignalUsername() {
+		return this.number;
+	}
+
+	public void saveAccount() {
+		account.save();
+	}
+	
+	public SignalServiceContent decryptMessage(SignalServiceEnvelope envelope) throws IllegalStateException {
+		try {
+			return (SignalServiceContent) methodDecrypt.invoke(manager, envelope);
+		} catch (Exception e) {
+			throw new IllegalStateException(e.getMessage(), e);
+		}
+    }
+
+}
