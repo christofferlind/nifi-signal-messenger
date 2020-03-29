@@ -8,6 +8,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.security.Security;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -28,10 +29,7 @@ import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
-import org.whispersystems.signalservice.api.SignalServiceMessageSender;
 import org.whispersystems.signalservice.api.messages.SendMessageResult;
-import org.whispersystems.signalservice.api.messages.SignalServiceAttachment;
-import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentPointer;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
@@ -118,7 +116,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 			
 			//Test
 			getMessageReceiver();
-			getMessageSender();
 			
 			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
 			methodDecrypt.setAccessible(true);
@@ -147,13 +144,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 		return messageReceiver;
 	}
 
-	public SignalServiceMessageSender getMessageSender() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-		Method methodGetMessageReceiver = Manager.class.getDeclaredMethod("getMessageSender");
-		methodGetMessageReceiver.setAccessible(true);
-		SignalServiceMessageSender messageSender = (SignalServiceMessageSender) methodGetMessageReceiver.invoke(manager);
-		return messageSender;
-	}
-	
 	private List<SendMessageResult> sendMessageWithAttachment(SignalServiceDataMessage.Builder builder, Collection<String> recipients) throws NoSuchMethodException, SecurityException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
 		Method methodSendMessage = Manager.class.getDeclaredMethod("sendMessage", SignalServiceDataMessage.Builder.class, Collection.class);
 		methodSendMessage.setAccessible(true);
@@ -205,17 +195,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 	@Override
 	public void sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException {
 		try {
-			SignalServiceMessageSender messageSender = getMessageSender();
 			SignalServiceDataMessage.Builder messageBuilder = SignalServiceDataMessage.newBuilder().withBody(body);
 
 			if (attachment != null) {
-				List<SignalServiceAttachment> attachmentPointers = new ArrayList<>(1);
-				if (attachment.isStream()) {
-					SignalServiceAttachmentPointer pointer = messageSender.uploadAttachment(attachment.asStream());
-					attachmentPointers.add(pointer);
-				}
-				
-				messageBuilder.withAttachments(attachmentPointers);
+				messageBuilder.withAttachments(Arrays.asList(attachment));
 			}
 			
 			messageBuilder.withProfileKey(account.getProfileKey());
@@ -223,8 +206,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 			@SuppressWarnings("unused")
 			List<SendMessageResult> sendResults = sendMessageWithAttachment(messageBuilder, address);
 			//TODO should do something with the result
-		} catch (IOException e) {
-			throw e;
 		} catch (Exception e) {
 			throw new IllegalStateException(e.getMessage(), e);
 		}
