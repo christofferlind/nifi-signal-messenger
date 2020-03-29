@@ -34,6 +34,7 @@ import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
+import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
 @CapabilityDescription("Consumes signal messages. "
@@ -168,18 +169,20 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 		
 		Map<String, String> attributes = new HashMap<>(7);
 		try {
-			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
 			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
 			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	envelope.getSourceAddress().getNumber());
 			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(envelope.getTimestamp()));
-			attributes.put("filename",					"" + envelope.getSourceAddress().getNumber() + ": " + (envelope.isReceipt() ? "receipt" : "message"));
+			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.FALSE));
 
-			if(!envelope.isReceipt()) {
-				SignalServiceContent decryptedMessage = service.decryptMessage(envelope);
-				String senderNumber = decryptedMessage.getSender();
+			SignalServiceContent decryptedMessage = service.decryptMessage(envelope);
+			String senderNumber = decryptedMessage.getSender();
+			attributes.put(ATTRIBUTE_SENDER_NUMBER, senderNumber);
 
-				attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, "false");
-				attributes.put(ATTRIBUTE_SENDER_NUMBER, senderNumber);
+			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();
+			if(envelope.isReceipt() || receiptMessage.isPresent()) {
+				attributes.put(ATTRIBUTE_RECEIPT, Boolean.toString(Boolean.TRUE));
+			} else {
+				attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(Boolean.FALSE));
 
 				Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
 				if(optionalDataMessage.isPresent()) {
@@ -190,6 +193,8 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 					attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(viewOnce));
 				}
 			}
+
+			attributes.put("filename",	"Message from: " + attributes.get(ATTRIBUTE_SENDER_NUMBER));
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, SUCCESS);
 		} catch (Throwable e) {
