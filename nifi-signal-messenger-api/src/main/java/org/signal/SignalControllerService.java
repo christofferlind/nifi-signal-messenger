@@ -2,7 +2,6 @@ package org.signal;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.util.Collections;
 import java.util.List;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -21,6 +20,8 @@ import org.signal.libsignal.metadata.ProtocolNoSessionException;
 import org.signal.libsignal.metadata.ProtocolUntrustedIdentityException;
 import org.signal.libsignal.metadata.SelfSendException;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
+import org.whispersystems.signalservice.api.SignalServiceMessageSender;
+import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.internal.push.UnsupportedDataMessageException;
@@ -29,15 +30,13 @@ import org.whispersystems.signalservice.internal.push.UnsupportedDataMessageExce
 @CapabilityDescription("Signal Messenger API")
 public interface SignalControllerService extends ControllerService {
 
-	public default void sendMessage(String address, String body) throws ProcessException, IOException {
-		sendMessage(Collections.singletonList(address), body);
-	}
-	
-	public void sendMessage(List<String> address, String body) throws ProcessException, IOException;
+	public void sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment) throws ProcessException, IOException;
 	
 	public void saveAccount();
 
 	public SignalServiceMessageReceiver getMessageReceiver() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException;
+	
+	public SignalServiceMessageSender getMessageSender() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException;
 	
 	public String getSignalUsername();
 	

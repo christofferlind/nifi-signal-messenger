@@ -1,12 +1,18 @@
 package org.signal;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -20,6 +26,7 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -27,6 +34,8 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
 
 @Tags({ "Signal", "Put", "Message", "Send" })
 @CapabilityDescription("Sends a message on Signal")
@@ -61,15 +70,15 @@ public class PutSignalMessage extends AbstractProcessor {
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
 
-//    public static final PropertyDescriptor ATTACHMENT = new PropertyDescriptor
-//            .Builder().name("Attachment")
-//            .displayName("Attachment")
-//            .description("Use the flowfile content as attachment. If this is set to 'true' then the content of the message will be taken from content property")
-//            .required(false)
-//            .allowableValues(Boolean.FALSE.toString(), Boolean.TRUE.toString())
-//            .defaultValue(Boolean.FALSE.toString())
-//            .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
-//            .build();
+    public static final PropertyDescriptor ATTACHMENT = new PropertyDescriptor
+            .Builder().name("Attachment")
+            .displayName("Attachment")
+            .description("Use the flowfile content as attachment. If this is set to 'true' then the content of the message will be taken from content property")
+            .required(false)
+            .allowableValues(Boolean.FALSE.toString(), Boolean.TRUE.toString())
+            .defaultValue(Boolean.FALSE.toString())
+            .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
+            .build();
 
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
@@ -91,7 +100,7 @@ public class PutSignalMessage extends AbstractProcessor {
         descriptors.add(SIGNAL_SERVICE);
         descriptors.add(RECIPIENTS);
         descriptors.add(MESSAGE_CONTENT);
-//        descriptors.add(ATTACHMENT);
+        descriptors.add(ATTACHMENT);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -126,32 +135,60 @@ public class PutSignalMessage extends AbstractProcessor {
         String recipient = context.getProperty(RECIPIENTS).evaluateAttributeExpressions(flowFile).getValue();
         String messageContent = context.getProperty(MESSAGE_CONTENT).evaluateAttributeExpressions(flowFile).getValue();
 
-//TODO: attachment implement
-//        boolean useAttachment = Boolean.valueOf(context.getProperty(ATTACHMENT).getValue());
+        boolean useAttachment = Boolean.valueOf(context.getProperty(ATTACHMENT).getValue());
 
-//        if(useAttachment) {
-//        } else {
-			if(messageContent == null || messageContent.isEmpty()) {
-				try {
-					StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
-					messageContent = content.toString();
-				} catch (Throwable e) {
-					getLogger().error(e.getMessage(), e);
-					session.transfer(flowFile, FAILURE);
-					return;
-				}
+        try {
+        	SignalServiceAttachmentStream attachment = null;
+
+        	if(useAttachment) {
+				attachment = loadFlowFileContentAsAttachment(session, flowFile);
+	        } else {
+	        	if(messageContent == null || messageContent.isEmpty()) {
+	        		try {
+	        			StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
+	        			messageContent = content.toString();
+	        		} catch (Throwable e) {
+	        			getLogger().error(e.getMessage(), e);
+	        			session.transfer(flowFile, FAILURE);
+	        			return;
+	        		}
+	        	}
 			}
-//		}
 
-		try {
 			List<String> recipients = getCommaSeparatedRecipients(recipient);
-			signalService.sendMessage(recipients, messageContent);
+			signalService.sendMessage(recipients, messageContent, attachment);
 			session.transfer(flowFile, SUCCESS);
 		} catch(Throwable e) {
 			getLogger().error(e.getMessage(), e);
 			session.transfer(flowFile, FAILURE);
 		}
     }
+    
+
+	private SignalServiceAttachmentStream loadFlowFileContentAsAttachment(ProcessSession session, FlowFile flowFile) {
+    	String mimeType = flowFile.getAttribute(CoreAttributes.MIME_TYPE.key());
+    	String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
+
+    	ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    	session.read(flowFile, inputStream -> copy(inputStream, outputStream));
+    	
+		Optional<byte[]> preview = Optional.absent();
+		Optional<String> caption = Optional.absent();
+		Optional<String> blurHash = Optional.absent();
+		
+		return new SignalServiceAttachmentStream(
+				new ByteArrayInputStream(outputStream.toByteArray()), 
+				mimeType, 
+				(long) outputStream.size(), 
+				Optional.of(filename), 
+				false, 
+				preview, 
+				0, 
+				0, 
+				caption, 
+				blurHash, 
+				null);
+	}
 
 	private List<String> getCommaSeparatedRecipients(String recipient) {
 		String[] split = recipient.split(",");
@@ -182,4 +219,23 @@ public class PutSignalMessage extends AbstractProcessor {
         });
 		return content;
 	}
+	
+	private static final int BUF_SIZE = 0x1000; // 4K
+
+	public static long copy(InputStream from, OutputStream to) throws IOException {
+		Objects.nonNull(from);
+		Objects.nonNull(to);
+		byte[] buf = new byte[BUF_SIZE];
+		long total = 0;
+		while (true) {
+			int r = from.read(buf);
+			if (r == -1) {
+				break;
+			}
+			to.write(buf, 0, r);
+			total += r;
+		}
+		return total;
+	}
+
 }

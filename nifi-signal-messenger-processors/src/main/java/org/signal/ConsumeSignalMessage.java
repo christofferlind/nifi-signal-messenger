@@ -21,6 +21,7 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnUnscheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractSessionFactoryProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -194,7 +195,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 				}
 			}
 
-			attributes.put("filename",	"Message from: " + attributes.get(ATTRIBUTE_SENDER_NUMBER));
+			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(ATTRIBUTE_SENDER_NUMBER));
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, SUCCESS);
 		} catch (Throwable e) {
