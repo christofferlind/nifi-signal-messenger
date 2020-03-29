@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.security.Security;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -73,6 +75,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private Method methodDecrypt;
 
+	private FileChannel accountFileChannel;
+
+	private FileLock accountFileLock;
+
     static {
         final List<PropertyDescriptor> props = new ArrayList<>();
         props.add(PROP_STORE_PATH);
@@ -99,6 +105,12 @@ public class SignalMessengerService extends AbstractControllerService implements
     	try {
 			manager = new Manager(number, storeFile);
 			manager.init();
+
+			account = getField(manager, "account");
+			accountManager = getField(manager, "accountManager");
+			
+			accountFileChannel = getField(account, "fileChannel");
+			accountFileLock = getField(account, "lock");
 			
 			if(!manager.isRegistered()) {
 				throw new InitializationException("Signal manager still not registered");
@@ -110,14 +122,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 			
 			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
 			methodDecrypt.setAccessible(true);
-			
-			Field fieldAccount = Manager.class.getDeclaredField("account");
-			fieldAccount.setAccessible(true);
-		    account = (SignalAccount) fieldAccount.get(manager);
-		    
-			Field fieldAccountManager = Manager.class.getDeclaredField("accountManager");
-			fieldAccountManager.setAccessible(true);
-		    accountManager = (SignalServiceAccountManager) fieldAccountManager.get(manager);
 
 		} catch (IOException e) {
 			throw new InitializationException(e.getMessage(), e);
@@ -161,7 +165,25 @@ public class SignalMessengerService extends AbstractControllerService implements
 
     @OnDisabled
     public void shutdown() {
+    	if(accountFileChannel != null) {
+    		try {
+    			accountFileChannel.close();
+    		} catch (IOException e) {}
+    	}
+
+    	if(accountFileLock != null) {
+    		try {
+    			accountFileLock.close();
+    		} catch (IOException e) {}
+    	}
     }
+
+	@SuppressWarnings("unchecked")
+	private static final <T> T getField(Object obj, String name) throws NoSuchFieldException, IllegalAccessException {
+		Field fieldFileChannel = obj.getClass().getDeclaredField(name);
+		fieldFileChannel.setAccessible(true);
+		return (T) fieldFileChannel.get(obj);
+	}
 
 	@Override
 	public String getSignalUsername() {
