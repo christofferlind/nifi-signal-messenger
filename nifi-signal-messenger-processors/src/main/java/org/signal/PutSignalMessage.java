@@ -17,8 +17,6 @@ import java.util.Set;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
-import org.apache.nifi.annotation.behavior.WritesAttribute;
-import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -38,10 +36,13 @@ import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
 
 @Tags({ "Signal", "Put", "Message", "Send" })
-@CapabilityDescription("Sends a message on Signal")
+@CapabilityDescription("Sends a message on Signal, with or without attachment")
 @SeeAlso({})
-@ReadsAttributes({@ReadsAttribute(attribute="", description="")})
-@WritesAttributes({@WritesAttribute(attribute="", description="")})
+@ReadsAttributes({
+	@ReadsAttribute(attribute="mime.type", description="If attachment is set to 'true', then this attribute is read and set as the mime type for the attachment"),
+	@ReadsAttribute(attribute="filename", description="If attachment is set to 'true', then this attribute is read and set as the file name for the attachment")
+})
+//@WritesAttributes({@WritesAttribute(attribute="", description="")})
 public class PutSignalMessage extends AbstractProcessor {
 
 	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
@@ -63,7 +64,7 @@ public class PutSignalMessage extends AbstractProcessor {
 
 	public static final PropertyDescriptor MESSAGE_CONTENT = new PropertyDescriptor
 			.Builder().name("Content")
-			.displayName("Content")
+			.displayName("Message")
 			.description("Message content. If this attribute is empty then the flowfile content will be used instead")
 			.required(false)
 			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
@@ -72,8 +73,8 @@ public class PutSignalMessage extends AbstractProcessor {
 
 	public static final PropertyDescriptor ATTACHMENT = new PropertyDescriptor
 			.Builder().name("Attachment")
-			.displayName("Content as attachment")
-			.description("Use the flowfile content as attachment. If this is set to 'true' then the content of flowfile will be taken and sent as attachment")
+			.displayName("Flowfile content as attachment")
+			.description("If set to 'true' then the flowfile content is used as attachment")
 			.required(false)
 			.allowableValues(Boolean.FALSE.toString(), Boolean.TRUE.toString())
 			.defaultValue(Boolean.FALSE.toString())
