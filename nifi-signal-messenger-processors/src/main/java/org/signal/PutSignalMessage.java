@@ -44,115 +44,117 @@ import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStre
 @WritesAttributes({@WritesAttribute(attribute="", description="")})
 public class PutSignalMessage extends AbstractProcessor {
 
-    public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
-            .Builder().name("SignalService")
-            .displayName("Signal Service")
-            .description("The signal service to use")
-            .required(true)
-            .identifiesControllerService(SignalControllerService.class)
-            .build();
+	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
+			.Builder().name("SignalService")
+			.displayName("Signal Service")
+			.description("The signal service to use")
+			.required(true)
+			.identifiesControllerService(SignalControllerService.class)
+			.build();
 
-    public static final PropertyDescriptor RECIPIENTS = new PropertyDescriptor
-            .Builder().name("Recipients")
-            .displayName("Recipients")
-            .description("Whom to send the data. Multiple numbers are separeted with comma (,)")
-            .required(true)
-            .addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .build();
+	public static final PropertyDescriptor RECIPIENTS = new PropertyDescriptor
+			.Builder().name("Recipients")
+			.displayName("Recipients")
+			.description("Multiple numbers are separeted with comma (,)")
+			.required(true)
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
 
-    public static final PropertyDescriptor MESSAGE_CONTENT = new PropertyDescriptor
-            .Builder().name("Content")
-            .displayName("Content")
-            .description("Message content. If this attribute is empty then the flowfile content will be used instead")
-            .required(false)
-            .addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .build();
+	public static final PropertyDescriptor MESSAGE_CONTENT = new PropertyDescriptor
+			.Builder().name("Content")
+			.displayName("Content")
+			.description("Message content. If this attribute is empty then the flowfile content will be used instead")
+			.required(false)
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
 
-    public static final PropertyDescriptor ATTACHMENT = new PropertyDescriptor
-            .Builder().name("Attachment")
-            .displayName("Attachment")
-            .description("Use the flowfile content as attachment. If this is set to 'true' then the content of the message will be taken from content property")
-            .required(false)
-            .allowableValues(Boolean.FALSE.toString(), Boolean.TRUE.toString())
-            .defaultValue(Boolean.FALSE.toString())
-            .addValidator(StandardValidators.BOOLEAN_VALIDATOR)
-            .build();
+	public static final PropertyDescriptor ATTACHMENT = new PropertyDescriptor
+			.Builder().name("Attachment")
+			.displayName("Content as attachment")
+			.description("Use the flowfile content as attachment. If this is set to 'true' then the content of flowfile will be taken and sent as attachment")
+			.required(false)
+			.allowableValues(Boolean.FALSE.toString(), Boolean.TRUE.toString())
+			.defaultValue(Boolean.FALSE.toString())
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
 
-    public static final Relationship SUCCESS = new Relationship.Builder()
-            .name("success")
-            .description("Successful send")
-            .build();
+	public static final Relationship SUCCESS = new Relationship.Builder()
+			.name("success")
+			.description("Successful send")
+			.build();
 
-    public static final Relationship FAILURE = new Relationship.Builder()
-            .name("failure")
-            .description("Unsuccessful send")
-            .build();
+	public static final Relationship FAILURE = new Relationship.Builder()
+			.name("failure")
+			.description("Unsuccessful send")
+			.build();
 
-    private List<PropertyDescriptor> descriptors;
+	private List<PropertyDescriptor> descriptors;
 
-    private Set<Relationship> relationships;
+	private Set<Relationship> relationships;
 
-    @Override
-    protected void init(final ProcessorInitializationContext context) {
-        final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
-        descriptors.add(SIGNAL_SERVICE);
-        descriptors.add(RECIPIENTS);
-        descriptors.add(MESSAGE_CONTENT);
-        descriptors.add(ATTACHMENT);
-        this.descriptors = Collections.unmodifiableList(descriptors);
+	@Override
+	protected void init(final ProcessorInitializationContext context) {
+		final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
+		descriptors.add(SIGNAL_SERVICE);
+		descriptors.add(RECIPIENTS);
+		descriptors.add(MESSAGE_CONTENT);
+		descriptors.add(ATTACHMENT);
+		this.descriptors = Collections.unmodifiableList(descriptors);
 
-        final Set<Relationship> relationships = new HashSet<Relationship>();
-        relationships.add(SUCCESS);
-        relationships.add(FAILURE);
-        this.relationships = Collections.unmodifiableSet(relationships);
-    }
+		final Set<Relationship> relationships = new HashSet<Relationship>();
+		relationships.add(SUCCESS);
+		relationships.add(FAILURE);
+		this.relationships = Collections.unmodifiableSet(relationships);
+	}
 
-    @Override
-    public Set<Relationship> getRelationships() {
-        return this.relationships;
-    }
+	@Override
+	public Set<Relationship> getRelationships() {
+		return this.relationships;
+	}
 
-    @Override
-    public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return descriptors;
-    }
+	@Override
+	public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+		return descriptors;
+	}
 
-    @OnScheduled
-    public void onScheduled(final ProcessContext context) {
+	@OnScheduled
+	public void onScheduled(final ProcessContext context) {
 
-    }
+	}
 
-    @Override
-    public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
-        FlowFile flowFile = session.get();
-        if ( flowFile == null ) {
-            return;
-        }
-        
-        SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-        String recipient = context.getProperty(RECIPIENTS).evaluateAttributeExpressions(flowFile).getValue();
-        String messageContent = context.getProperty(MESSAGE_CONTENT).evaluateAttributeExpressions(flowFile).getValue();
+	@Override
+	public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
+		FlowFile flowFile = session.get();
+		if ( flowFile == null ) {
+			return;
+		}
 
-        boolean useAttachment = Boolean.valueOf(context.getProperty(ATTACHMENT).getValue());
+		SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
+		String recipient = context.getProperty(RECIPIENTS).evaluateAttributeExpressions(flowFile).getValue();
+		String messageContent = context.getProperty(MESSAGE_CONTENT).evaluateAttributeExpressions(flowFile).getValue();
 
-        try {
-        	SignalServiceAttachmentStream attachment = null;
+		String useAttachmentString = context.getProperty(ATTACHMENT).evaluateAttributeExpressions(flowFile).getValue();
+		boolean useAttachment = "true".equalsIgnoreCase(useAttachmentString);
 
-        	if(useAttachment) {
+		try {
+			SignalServiceAttachmentStream attachment = null;
+
+			if(useAttachment) {
 				attachment = loadFlowFileContentAsAttachment(session, flowFile);
-	        } else {
-	        	if(messageContent == null || messageContent.isEmpty()) {
-	        		try {
-	        			StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
-	        			messageContent = content.toString();
-	        		} catch (Throwable e) {
-	        			getLogger().error(e.getMessage(), e);
-	        			session.transfer(flowFile, FAILURE);
-	        			return;
-	        		}
-	        	}
+			} else {
+				if(messageContent == null || messageContent.isEmpty()) {
+					try {
+						StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
+						messageContent = content.toString();
+					} catch (Throwable e) {
+						getLogger().error(e.getMessage(), e);
+						session.transfer(flowFile, FAILURE);
+						return;
+					}
+				}
 			}
 
 			List<String> recipients = getCommaSeparatedRecipients(recipient);
@@ -162,20 +164,20 @@ public class PutSignalMessage extends AbstractProcessor {
 			getLogger().error(e.getMessage(), e);
 			session.transfer(flowFile, FAILURE);
 		}
-    }
-    
+	}
+
 
 	private SignalServiceAttachmentStream loadFlowFileContentAsAttachment(ProcessSession session, FlowFile flowFile) {
-    	String mimeType = flowFile.getAttribute(CoreAttributes.MIME_TYPE.key());
-    	String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
+		String mimeType = flowFile.getAttribute(CoreAttributes.MIME_TYPE.key());
+		String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
 
-    	ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-    	session.read(flowFile, inputStream -> copy(inputStream, outputStream));
-    	
+		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+		session.read(flowFile, inputStream -> copy(inputStream, outputStream));
+
 		Optional<byte[]> preview = Optional.absent();
 		Optional<String> caption = Optional.absent();
 		Optional<String> blurHash = Optional.absent();
-		
+
 		return new SignalServiceAttachmentStream(
 				new ByteArrayInputStream(outputStream.toByteArray()), 
 				mimeType, 
@@ -197,7 +199,7 @@ public class PutSignalMessage extends AbstractProcessor {
 			String trimmed = string.trim();
 			if(trimmed.isEmpty())
 				continue;
-			
+
 			recipients.add(trimmed);
 		}
 		return recipients;
@@ -205,21 +207,21 @@ public class PutSignalMessage extends AbstractProcessor {
 
 	private StringBuilder loadFlowFileContentAsMessageContent(final ProcessSession session, FlowFile flowFile) {
 		StringBuilder content = new StringBuilder();
-        
-        session.read(flowFile, inputstream -> {
-        	try(
-        			InputStreamReader streamReader = new InputStreamReader(inputstream, Charset.forName("UTF8"));
-        			BufferedReader bufferedReader = new BufferedReader(streamReader);
-        			){
-        		String line = null;
-        		while((line = bufferedReader.readLine()) != null) {
-        			content.append(line).append("\n");
-        		}
-        	}
-        });
+
+		session.read(flowFile, inputstream -> {
+			try(
+					InputStreamReader streamReader = new InputStreamReader(inputstream, Charset.forName("UTF8"));
+					BufferedReader bufferedReader = new BufferedReader(streamReader);
+					){
+				String line = null;
+				while((line = bufferedReader.readLine()) != null) {
+					content.append(line).append("\n");
+				}
+			}
+		});
 		return content;
 	}
-	
+
 	private static final int BUF_SIZE = 0x1000; // 4K
 
 	public static long copy(InputStream from, OutputStream to) throws IOException {
@@ -237,5 +239,4 @@ public class PutSignalMessage extends AbstractProcessor {
 		}
 		return total;
 	}
-
 }
