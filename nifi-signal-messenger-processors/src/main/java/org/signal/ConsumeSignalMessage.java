@@ -171,12 +171,12 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 		Map<String, String> attributes = new HashMap<>(7);
 		try {
 			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
-			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	envelope.getSourceAddress().getNumber());
+			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	envelope.getSourceAddress().getNumber().get());
 			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(envelope.getTimestamp()));
 			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.FALSE));
 
 			SignalServiceContent decryptedMessage = service.decryptMessage(envelope);
-			String senderNumber = decryptedMessage.getSender();
+			String senderNumber = decryptedMessage.getSender().getNumber().get();
 			attributes.put(ATTRIBUTE_SENDER_NUMBER, senderNumber);
 
 			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();

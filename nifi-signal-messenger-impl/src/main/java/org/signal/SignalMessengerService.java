@@ -201,7 +201,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 				messageBuilder.withAttachments(Arrays.asList(attachment));
 			}
 			
-			messageBuilder.withProfileKey(account.getProfileKey());
+			messageBuilder.withProfileKey(account.getProfileKey().serialize());
 			
 			@SuppressWarnings("unused")
 			List<SendMessageResult> sendResults = sendMessageWithAttachment(messageBuilder, address);

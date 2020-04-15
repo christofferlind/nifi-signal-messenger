@@ -196,6 +196,7 @@ public class PutSignalMessage extends AbstractProcessor {
 				0, 
 				caption, 
 				blurHash, 
+				null,
 				null);
 	}
 
