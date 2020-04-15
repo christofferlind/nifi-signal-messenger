@@ -76,7 +76,6 @@ public class PutSignalMessage extends AbstractProcessor {
 			.displayName("Flowfile content as attachment")
 			.description("If set to 'true' then the flowfile content is used as attachment")
 			.required(false)
-			.allowableValues(Boolean.FALSE.toString(), Boolean.TRUE.toString())
 			.defaultValue(Boolean.FALSE.toString())
 			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -139,6 +138,8 @@ public class PutSignalMessage extends AbstractProcessor {
 
 		String useAttachmentString = context.getProperty(ATTACHMENT).evaluateAttributeExpressions(flowFile).getValue();
 		boolean useAttachment = "true".equalsIgnoreCase(useAttachmentString);
+		
+		getLogger().debug("Using attachments: " + useAttachment);
 
 		try {
 			SignalServiceAttachmentStream attachment = null;
@@ -148,6 +149,7 @@ public class PutSignalMessage extends AbstractProcessor {
 			} else {
 				if(messageContent == null || messageContent.isEmpty()) {
 					try {
+						getLogger().info("Message is empty, using content as message");
 						StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
 						messageContent = content.toString();
 					} catch (Throwable e) {
@@ -172,8 +174,12 @@ public class PutSignalMessage extends AbstractProcessor {
 		String mimeType = flowFile.getAttribute(CoreAttributes.MIME_TYPE.key());
 		String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
 
+		getLogger().debug("Mime type: " + mimeType);
+
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 		session.read(flowFile, inputStream -> copy(inputStream, outputStream));
+
+		getLogger().debug("Flowfile content read");
 
 		Optional<byte[]> preview = Optional.absent();
 		Optional<String> caption = Optional.absent();
