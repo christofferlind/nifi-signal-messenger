@@ -173,6 +173,10 @@ public class PutSignalMessage extends AbstractProcessor {
 	private SignalServiceAttachmentStream loadFlowFileContentAsAttachment(ProcessSession session, FlowFile flowFile) {
 		String mimeType = flowFile.getAttribute(CoreAttributes.MIME_TYPE.key());
 		String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
+		
+		if(mimeType == null || mimeType.isEmpty()) {
+			throw new NullPointerException("mime.type attribute can not be empty");
+		}
 
 		getLogger().debug("Mime type: " + mimeType);
 
