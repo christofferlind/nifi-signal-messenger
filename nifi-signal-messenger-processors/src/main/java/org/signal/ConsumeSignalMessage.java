@@ -34,6 +34,7 @@ import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
+import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Reaction;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
 
@@ -51,7 +52,11 @@ import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message (this is the same as the one in the controller used)"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_IDENTIFIED, description="If the number is verified"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute")
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute"),
+
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message")
 	})
 public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
@@ -62,7 +67,11 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 	public  static final String ATTRIBUTE_RECEIVING_NUMBER = 			"signal.receiving.number";
 	public  static final String ATTRIBUTE_SENDER_NUMBER = 				"signal.sender.number";
 	public  static final String ATTRIBUTE_SENDER_IDENTIFIED = 			"signal.sender.identified";
-	
+
+	public static final String ATTRIBUTE_MESSAGE_REACTION_EMOJI = 				"signal.message.reaction.emoji";
+	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR = 		"signal.message.reaction.target.author";
+	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP = 	"signal.message.reaction.target.timestamp";
+
 	public  static final String ATTRIBUTE_ERROR_MESSAGE = 				"signal.error.message";
 
 	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
@@ -192,6 +201,13 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
 					boolean viewOnce = dataMessage.isViewOnce();
 					attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(viewOnce));
+					
+					if(dataMessage.getReaction().isPresent()) {
+						Reaction reaction = dataMessage.getReaction().get();
+						attributes.put(ATTRIBUTE_MESSAGE_REACTION_EMOJI, reaction.getEmoji());
+						attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, reaction.getTargetAuthor().getNumber().get());
+						attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(reaction.getTargetSentTimestamp()));
+					}
 				}
 			}
 
