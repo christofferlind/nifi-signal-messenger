@@ -23,6 +23,7 @@ import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
+import org.asamk.signal.AttachmentInvalidException;
 import org.asamk.signal.manager.Manager;
 import org.asamk.signal.storage.SignalAccount;
 import org.asamk.signal.util.SecurityProvider;
@@ -38,6 +39,8 @@ import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.push.SignalServiceAddress;
+import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
+import org.whispersystems.signalservice.api.util.InvalidNumberException;
 
 @Tags({ "Signal", "Messenger"})
 @CapabilityDescription("Signal Messenger service")
@@ -244,6 +247,15 @@ public class SignalMessengerService extends AbstractControllerService implements
 			throw e;
 		} catch (Exception e) {
 			throw new IllegalStateException(e.getMessage(), e);
+		}
+	}
+
+	@Override
+	public void sendMessageReaction(String emoji, boolean remove, String targetAuthor, long targetSentTimestamp, List<String> recipients) throws IOException, EncapsulatedExceptions, InvalidNumberException {
+		try {
+			manager.sendMessageReaction(emoji, remove, targetAuthor, targetSentTimestamp, recipients);
+		} catch (AttachmentInvalidException e) {
+			getLogger().error(e.getMessage(), e);
 		}
 	}
 }
