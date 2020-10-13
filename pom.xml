@@ -25,8 +25,8 @@
     <properties>
     	<nifi.signal.messenger.version>1.2</nifi.signal.messenger.version>
     	<nifi.version>1.11.3</nifi.version>
-    	<signal.service.version>2.15.3_unofficial_7</signal.service.version>
-    	<signal.cli.version>0.6.7</signal.cli.version>
+    	<signal.service.version>2.15.3_unofficial_14</signal.service.version>
+    	<signal.cli.version>0.6.10</signal.cli.version>
     </properties>
 
 <!--     <groupId>org.apache.nifi</groupId> -->

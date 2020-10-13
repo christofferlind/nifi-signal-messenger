@@ -18,7 +18,6 @@ package org.signal;
 
 import java.io.IOException;
 
-import org.asamk.signal.AttachmentInvalidException;
 import org.junit.Before;
 import org.junit.Test;
 import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
@@ -31,7 +30,7 @@ public class TestStandardMyService {
     }
 
     @Test
-    public void testService() throws IOException, AttachmentInvalidException, EncapsulatedExceptions {
+    public void testService() throws IOException, EncapsulatedExceptions {
     }
 
 }

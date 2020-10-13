@@ -23,8 +23,8 @@ import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
-import org.asamk.signal.AttachmentInvalidException;
 import org.asamk.signal.manager.Manager;
+import org.asamk.signal.manager.ServiceConfig;
 import org.asamk.signal.storage.SignalAccount;
 import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -41,10 +41,13 @@ import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.push.SignalServiceAddress;
 import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
 import org.whispersystems.signalservice.api.util.InvalidNumberException;
+import org.whispersystems.signalservice.internal.configuration.SignalServiceConfiguration;
 
 @Tags({ "Signal", "Messenger"})
 @CapabilityDescription("Signal Messenger service")
 public class SignalMessengerService extends AbstractControllerService implements SignalControllerService {
+
+	private static final String USER_AGENT = "nifi-signal-messenger";
 
 	static {
 		Security.insertProviderAt(new SecurityProvider(), 1);
@@ -108,8 +111,10 @@ public class SignalMessengerService extends AbstractControllerService implements
     	number = context.getProperty(PROP_NUMBER).getValue();
     	
     	try {
-			manager = new Manager(number, storeFile);
-			manager.init();
+    		SignalServiceConfiguration serviceConfiguration = ServiceConfig.createDefaultServiceConfiguration(USER_AGENT);
+    		manager = Manager.init(number, storeFile, serviceConfiguration, USER_AGENT);
+    		
+            manager.checkAccountState();
 
 			account = getField(manager, "account");
 			accountManager = getField(manager, "accountManager");
@@ -181,6 +186,10 @@ public class SignalMessengerService extends AbstractControllerService implements
     			accountFileLock.close();
     		} catch (IOException e) {}
     	}
+    	
+    	try {
+			manager.close();
+		} catch (IOException e) {}
     }
 
 	@SuppressWarnings("unchecked")
@@ -252,10 +261,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	@Override
 	public void sendMessageReaction(String emoji, boolean remove, String targetAuthor, long targetSentTimestamp, List<String> recipients) throws IOException, EncapsulatedExceptions, InvalidNumberException {
-		try {
-			manager.sendMessageReaction(emoji, remove, targetAuthor, targetSentTimestamp, recipients);
-		} catch (AttachmentInvalidException e) {
-			getLogger().error(e.getMessage(), e);
-		}
+		manager.sendMessageReaction(emoji, remove, targetAuthor, targetSentTimestamp, recipients);
 	}
 }

@@ -34,6 +34,7 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
+import org.whispersystems.signalservice.internal.push.http.ResumableUploadSpec;
 
 @Tags({ "Signal", "Put", "Message", "Send" })
 @CapabilityDescription("Sends a message on Signal, with or without attachment")
@@ -188,6 +189,10 @@ public class PutSignalMessage extends AbstractProcessor {
 		Optional<byte[]> preview = Optional.absent();
 		Optional<String> caption = Optional.absent();
 		Optional<String> blurHash = Optional.absent();
+		
+		Optional<ResumableUploadSpec> resumableUploadSpec = Optional.absent();
+
+		final long uploadTimestamp = System.currentTimeMillis();
 
 		return new SignalServiceAttachmentStream(
 				new ByteArrayInputStream(outputStream.toByteArray()), 
@@ -195,13 +200,16 @@ public class PutSignalMessage extends AbstractProcessor {
 				(long) outputStream.size(), 
 				Optional.of(filename), 
 				false, 
+				false,
 				preview, 
 				0, 
 				0, 
+				uploadTimestamp,
 				caption, 
 				blurHash, 
 				null,
-				null);
+				null,
+				resumableUploadSpec);
 	}
 
 	private List<String> getCommaSeparatedRecipients(String recipient) {
