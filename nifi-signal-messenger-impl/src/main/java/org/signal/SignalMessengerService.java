@@ -108,7 +108,7 @@ public class SignalMessengerService extends AbstractControllerService implements
     @OnEnabled
     public void onEnabled(final ConfigurationContext context) throws InitializationException {
     	String storeFile = context.getProperty(PROP_STORE_PATH).getValue();
-    	number = context.getProperty(PROP_NUMBER).getValue();
+    	String number = context.getProperty(PROP_NUMBER).getValue();
     	
     	try {
     		SignalServiceConfiguration serviceConfiguration = ServiceConfig.createDefaultServiceConfiguration(USER_AGENT);
@@ -132,7 +132,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 			
 			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
 			methodDecrypt.setAccessible(true);
-
+			
+			this.number = number;
 		} catch (IOException e) {
 			throw new InitializationException(e.getMessage(), e);
 		} catch (NoSuchMethodException e) {
