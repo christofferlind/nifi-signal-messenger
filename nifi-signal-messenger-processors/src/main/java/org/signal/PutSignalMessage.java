@@ -7,11 +7,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -33,7 +36,10 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.whispersystems.libsignal.util.guava.Optional;
+import org.whispersystems.signalservice.api.messages.SendMessageResult;
+import org.whispersystems.signalservice.api.messages.SendMessageResult.IdentityFailure;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
+import org.whispersystems.signalservice.api.push.exceptions.UnregisteredUserException;
 import org.whispersystems.signalservice.internal.push.http.ResumableUploadSpec;
 
 @Tags({ "Signal", "Put", "Message", "Send" })
@@ -89,7 +95,7 @@ public class PutSignalMessage extends AbstractProcessor {
 
 	public static final Relationship FAILURE = new Relationship.Builder()
 			.name("failure")
-			.description("Unsuccessful send")
+			.description("Failed sends will be routed to this relationship. An extra flowfile per recipient will also be sent with additional details in the flowfile attributes")
 			.build();
 
 	private List<PropertyDescriptor> descriptors;
@@ -162,12 +168,59 @@ public class PutSignalMessage extends AbstractProcessor {
 			}
 
 			List<String> recipients = getCommaSeparatedRecipients(recipient);
-			signalService.sendMessage(recipients, messageContent, attachment);
-			session.transfer(flowFile, SUCCESS);
+			List<SendMessageResult> results = signalService.sendMessage(recipients, messageContent, attachment);
+			
+			boolean allOk = true;
+			for (SendMessageResult result : results) {
+				if(result.getSuccess() == null || result.isNetworkFailure() || result.isUnregisteredFailure()) {
+					allOk = false;
+					transferFailedFlowFile(session, flowFile, result);
+				}
+			}
+			
+			if(allOk) {
+				session.transfer(flowFile, SUCCESS);
+			} else {
+				session.putAttribute(flowFile, "signal.send.failed", Boolean.toString(true));
+				session.transfer(flowFile, SUCCESS);
+			}
+		} catch(InvocationTargetException e) {
+			Throwable target = e.getTargetException();
+			if(target == null) {
+				getLogger().error(e.getMessage(), e);
+				session.transfer(flowFile, FAILURE);
+ 			} else if(target instanceof UnregisteredUserException){
+				getLogger().error(e.getMessage(), e);
+				flowFile = session.putAttribute(flowFile, "signal.send.failed.unregistered", Boolean.toString(true));
+				session.transfer(flowFile, FAILURE);
+ 			} else {
+				getLogger().error(target.getMessage(), target);
+				session.transfer(flowFile, FAILURE);
+ 			}
 		} catch(Throwable e) {
 			getLogger().error(e.getMessage(), e);
 			session.transfer(flowFile, FAILURE);
 		}
+	}
+
+	private void transferFailedFlowFile(final ProcessSession session, FlowFile flowFile, SendMessageResult result) {
+		FlowFile failed = session.clone(flowFile);
+		
+		Map<String, String> attribs = new HashMap<>();
+		
+		Optional<String> number = result.getAddress().getNumber();
+
+		boolean failedNetwork = result.isNetworkFailure();
+		boolean failedUnregistered = result.isUnregisteredFailure();
+		IdentityFailure failedIdentity = result.getIdentityFailure();
+
+		attribs.put("signal.send.failed.number", number.or("UNKNOWN"));
+		attribs.put("signal.send.failed.network", Boolean.toString(failedNetwork));
+		attribs.put("signal.send.failed.unregistered", Boolean.toString(failedUnregistered));
+		attribs.put("signal.send.failed.identity", failedIdentity == null ? "" : failedIdentity.getIdentityKey().getFingerprint());
+		
+		failed = session.putAllAttributes(failed, attribs);
+		session.transfer(failed, FAILURE);
 	}
 
 

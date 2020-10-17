@@ -224,9 +224,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 	 * @param attachment - attachments to send
 	 * @return 
 	 * @return 
+	 * @throws InvocationTargetException 
 	 */
 	@Override
-	public List<SendMessageResult> sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException {
+	public List<SendMessageResult> sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException, InvocationTargetException {
 		Objects.requireNonNull(address);
 		Objects.requireNonNull(body);
 		
@@ -266,6 +267,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 			
 			return sendMessageWithAttachment(messageBuilder, numbers);
 		} catch (IOException e) {
+			throw e;
+		} catch (InvocationTargetException e) {
 			throw e;
 		} catch (Exception e) {
 			throw new IllegalStateException(e.getMessage(), e);
