@@ -27,6 +27,8 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TestSignalMessengerService {
 	private String storePath = System.getenv("nifi-signal-messenger.test.data");
@@ -44,8 +46,12 @@ public class TestSignalMessengerService {
 
     @Test
     public void enableDisable() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-    	if(isSettingsEmpty())
-    		return;
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		Logger logger = LoggerFactory.getLogger(TestSignalMessengerService.class);
+    		logger.warn(exc.getMessage(), exc);
+			return;
+		}
 
     	resetRunner();
 

@@ -20,6 +20,7 @@ import org.signal.libsignal.metadata.ProtocolNoSessionException;
 import org.signal.libsignal.metadata.ProtocolUntrustedIdentityException;
 import org.signal.libsignal.metadata.SelfSendException;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
+import org.whispersystems.signalservice.api.messages.SendMessageResult;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
@@ -31,7 +32,7 @@ import org.whispersystems.signalservice.internal.push.UnsupportedDataMessageExce
 @CapabilityDescription("Signal Messenger API")
 public interface SignalControllerService extends ControllerService {
 
-	public void sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment) throws ProcessException, IOException;
+	public List<SendMessageResult> sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment) throws ProcessException, IOException;
 	
 	public void saveAccount();
 

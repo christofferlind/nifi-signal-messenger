@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -217,8 +218,21 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
     }
 
+	/**
+	 * @param address - {@link List} of numbers to send the message to, can not be null. If the given list is empty, this method will return immediately.
+	 * @param body - The message to send, can not be null
+	 * @param attachment - attachments to send
+	 * @return 
+	 * @return 
+	 */
 	@Override
-	public void sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException {
+	public List<SendMessageResult> sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException {
+		Objects.requireNonNull(address);
+		Objects.requireNonNull(body);
+		
+		if(address.isEmpty())
+			return Collections.emptyList();
+		
 		try {
 			SignalServiceMessageSender messageSender = getMessageSender();
 			SignalServiceDataMessage.Builder messageBuilder = SignalServiceDataMessage.newBuilder().withBody(body);
@@ -250,9 +264,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 				}
 			}
 			
-			@SuppressWarnings("unused")
-			List<SendMessageResult> sendResults = sendMessageWithAttachment(messageBuilder, numbers);
-			//TODO should do something with the result
+			return sendMessageWithAttachment(messageBuilder, numbers);
 		} catch (IOException e) {
 			throw e;
 		} catch (Exception e) {
