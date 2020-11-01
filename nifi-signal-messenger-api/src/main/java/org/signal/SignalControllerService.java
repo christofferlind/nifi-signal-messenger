@@ -19,6 +19,7 @@ import org.signal.libsignal.metadata.ProtocolLegacyMessageException;
 import org.signal.libsignal.metadata.ProtocolNoSessionException;
 import org.signal.libsignal.metadata.ProtocolUntrustedIdentityException;
 import org.signal.libsignal.metadata.SelfSendException;
+import org.whispersystems.signalservice.api.SignalServiceMessagePipe;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.messages.SendMessageResult;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
@@ -36,6 +37,8 @@ public interface SignalControllerService extends ControllerService {
 	
 	public void saveAccount();
 
+	public SignalServiceMessagePipe getMessagePipe() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException;
+	
 	public SignalServiceMessageReceiver getMessageReceiver() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException;
 	
 	public String getSignalUsername();

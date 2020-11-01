@@ -30,6 +30,7 @@ import org.asamk.signal.storage.SignalAccount;
 import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
+import org.whispersystems.signalservice.api.SignalServiceMessagePipe;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.SignalServiceMessageSender;
 import org.whispersystems.signalservice.api.messages.SendMessageResult;
@@ -88,6 +89,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private FileLock accountFileLock;
 
+	private Field fieldMessagePipe;
+
     static {
         final List<PropertyDescriptor> props = new ArrayList<>();
         props.add(PROP_STORE_PATH);
@@ -134,6 +137,9 @@ public class SignalMessengerService extends AbstractControllerService implements
 			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
 			methodDecrypt.setAccessible(true);
 			
+			fieldMessagePipe = Manager.class.getDeclaredField("messagePipe");
+			fieldMessagePipe.setAccessible(true);
+			
 			this.number = number;
 		} catch (IOException e) {
 			throw new InitializationException(e.getMessage(), e);
@@ -150,6 +156,17 @@ public class SignalMessengerService extends AbstractControllerService implements
 		} catch (NoSuchFieldException e) {
 			throw new InitializationException(e.getMessage(), e);
 		}
+    }
+
+    public SignalServiceMessagePipe getMessagePipe() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+		SignalServiceMessagePipe messagePipe = (SignalServiceMessagePipe) fieldMessagePipe.get(manager);
+
+    	if (messagePipe == null) {
+            messagePipe = getMessageReceiver().createMessagePipe();
+            fieldMessagePipe.set(manager, messagePipe);
+        }
+    	
+		return messagePipe;
     }
 
 	public SignalServiceMessageReceiver getMessageReceiver() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
@@ -176,7 +193,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	}
 
     @OnDisabled
-    public void shutdown() {
+    public void onDisable() {
     	if(accountFileChannel != null) {
     		try {
     			accountFileChannel.close();
