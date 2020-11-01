@@ -1,5 +1,6 @@
 package org.signal;
 
+import java.lang.Thread.State;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
@@ -31,7 +33,6 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.whispersystems.libsignal.util.guava.Optional;
-import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Reaction;
@@ -105,7 +106,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     private Set<Relationship> relationships;
     
 	private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
-	private SignalMessageReceiverThread threadListen;
+	private volatile SignalMessageReceiverThread threadListen;
 
     @Override
     protected void init(final ProcessorInitializationContext context) {
@@ -131,51 +132,78 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     }
     
     @OnScheduled
-    public void startWebSocket(ProcessContext context) {
+    public void onScheduled(ProcessContext context) throws ProcessException {
     	SignalControllerService service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
     	boolean ignoreReceipts =  context.getProperty(IGNORE_RECEIPT_MESSAGE).asBoolean();
     	ComponentLog logger = getLogger();
 
-    	try {
-			SignalServiceMessageReceiver messageReceiver = service.getMessageReceiver();
-
-			threadListen = new SignalMessageReceiverThread(
-								service,
-								messageReceiver,
-								envelope -> handleEnvelope(service, ignoreReceipts, envelope));
-			
-			threadListen.setWaitUntil(() -> sessionFactoryReference.get() != null);
-			threadListen.setOnError(e -> logger.error(e.getMessage(), e));
-			threadListen.start();
-    	} catch (Throwable e) {
-    		logger.error(e.getMessage(), e);
+    	if(threadListen == null) {
+			try {
+				Consumer<SignalServiceEnvelope> messageHandler = 
+						envelope -> handleEnvelope(service, ignoreReceipts, envelope);
+						
+				threadListen = new SignalMessageReceiverThread(service, messageHandler, this::onError);
+				
+				//This ensures that the messagepipe exists when the thread is started
+				//It takes some time to get connected
+				service.getMessagePipe();
+				
+				if(logger.isDebugEnabled()) logger.debug("Signal message listener created");
+			} catch (Throwable e) {
+				stopListeningThread();
+				throw new ProcessException("Error initializing ConsumeSignalMessage", e);
+			}
 		}
+    }
+    
+    private void onError(Throwable e) {
+    	ComponentLog logger = getLogger();
+    	logger.error(e.getMessage(), e);
     }
     
     @OnUnscheduled
     public void unschedule() {
-    	if(threadListen != null) {
+    	stopListeningThread();
+    }
+
+	private void stopListeningThread() {
+		if(threadListen != null) {
     		threadListen.interrupt();
     		threadListen = null;
-		}
-    }
+    		if(getLogger().isDebugEnabled()) getLogger().debug("Signal message listener interrupted");
+    	}
+	}
     
 	@Override
 	public void onTrigger(ProcessContext context, ProcessSessionFactory sessionFactory) throws ProcessException {
         sessionFactoryReference.compareAndSet(null, sessionFactory);
+        
+        if(threadListen != null && State.NEW.equals(threadListen.getState())) {
+			threadListen.start();
+			if(getLogger().isDebugEnabled()) getLogger().debug("Signal message listener started");
+		}
+        
         context.yield();
 	}
 
 	private void handleEnvelope(SignalControllerService service, boolean ignoreReceipts, SignalServiceEnvelope envelope) {
-		ProcessSessionFactory sessionFactory = sessionFactoryReference.get();
-		if(sessionFactory == null)
+		if(envelope == null)
 			return;
 		
-		if(envelope.isReceipt() && ignoreReceipts)
+		ProcessSessionFactory sessionFactory = sessionFactoryReference.get();
+		if(sessionFactory == null) {
+			getLogger().warn("Message received, but no ProcessSessionFactory is set so we cant handle the signal message");
 			return;
+		}
+		
+		if(envelope.isReceipt() && ignoreReceipts) {
+			if(getLogger().isDebugEnabled()) getLogger().debug("Message is a receipt, but it should be ignored");
+			return;
+		}
+
+		if(getLogger().isDebugEnabled()) getLogger().debug("Received message");
 
 		ProcessSession session = sessionFactory.createSession();
-		FlowFile flowFile = session.create();
 		
 		Map<String, String> attributes = new HashMap<>(7);
 		try {
@@ -211,13 +239,16 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			}
 
 			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(ATTRIBUTE_SENDER_NUMBER));
+
+			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, SUCCESS);
 		} catch (Throwable e) {
-			getLogger().error(e.getMessage(), e);
+			onError(e);
 			
 			attributes.put(ATTRIBUTE_ERROR_MESSAGE, e.getMessage());
 			
+			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, FAILURE);
 		}

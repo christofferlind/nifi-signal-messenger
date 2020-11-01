@@ -32,6 +32,8 @@ public class TestPutSignalMessage extends AbstractSignalTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(TestPutSignalMessage.class);
 	
 	private TestRunner runner;
+
+	private String serviceIdentifier;
 	
 	@Before
     public void init() throws InitializationException {
@@ -41,8 +43,8 @@ public class TestPutSignalMessage extends AbstractSignalTest {
 		
         runner = TestRunners.newTestRunner(PutSignalMessage.class);
 
-        String identifier = createSignaleService(runner);
-        runner.setProperty(PutSignalMessage.SIGNAL_SERVICE, identifier);
+        setSignaleService(runner);
+        runner.setProperty(PutSignalMessage.SIGNAL_SERVICE, serviceIdentifier);
         runner.enableControllerService(service);
     }
 
