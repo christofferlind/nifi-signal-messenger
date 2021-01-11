@@ -23,16 +23,18 @@
     </parent>
     
     <properties>
-    	<nifi.signal.messenger.version>1.3</nifi.signal.messenger.version>
+    	<nifi.signal.messenger.version>1.4</nifi.signal.messenger.version>
     	<nifi.version>1.11.3</nifi.version>
-    	<signal.service.version>2.15.3_unofficial_14</signal.service.version>
-    	<signal.cli.version>0.6.11</signal.cli.version>
+    	<signal.service.version>2.15.3_unofficial_15</signal.service.version>
+    	<signal.cli.version>0.7.2</signal.cli.version>
     </properties>
 
 <!--     <groupId>org.apache.nifi</groupId> -->
     <artifactId>nifi-signal-messenger</artifactId>
-    <version>${nifi.signal.messenger.version}</version>
     <packaging>pom</packaging>
+
+<!--     <version>${nifi.signal.messenger.version}</version> -->
+	<version>1.4</version>
 
     <modules>
         <module>nifi-signal-messenger-api</module>

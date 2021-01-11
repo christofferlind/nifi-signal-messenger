@@ -1,5 +1,6 @@
 package org.signal;
 
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -26,7 +27,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.asamk.signal.manager.Manager;
 import org.asamk.signal.manager.ServiceConfig;
-import org.asamk.signal.storage.SignalAccount;
+import org.asamk.signal.manager.storage.SignalAccount;
 import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
@@ -111,10 +112,12 @@ public class SignalMessengerService extends AbstractControllerService implements
      */
     @OnEnabled
     public void onEnabled(final ConfigurationContext context) throws InitializationException {
-    	String storeFile = context.getProperty(PROP_STORE_PATH).getValue();
+    	String storeFileString = context.getProperty(PROP_STORE_PATH).getValue();
     	String number = context.getProperty(PROP_NUMBER).getValue();
     	
     	try {
+    		File storeFile = new File(storeFileString);
+
     		SignalServiceConfiguration serviceConfiguration = ServiceConfig.createDefaultServiceConfiguration(USER_AGENT);
     		manager = Manager.init(number, storeFile, serviceConfiguration, USER_AGENT);
     		
