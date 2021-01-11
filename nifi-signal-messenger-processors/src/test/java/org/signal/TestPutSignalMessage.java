@@ -33,8 +33,6 @@ public class TestPutSignalMessage extends AbstractSignalTest {
 	
 	private TestRunner runner;
 
-	private String serviceIdentifier;
-	
 	@Before
     public void init() throws InitializationException {
 		if(isSettingsEmpty()) {

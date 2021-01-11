@@ -11,8 +11,10 @@ import java.security.Security;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -27,9 +29,14 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.asamk.signal.manager.Manager;
 import org.asamk.signal.manager.ServiceConfig;
+import org.asamk.signal.manager.groups.GroupId;
+import org.asamk.signal.manager.groups.GroupIdFormatException;
+import org.asamk.signal.manager.groups.GroupUtils;
 import org.asamk.signal.manager.storage.SignalAccount;
+import org.asamk.signal.manager.storage.groups.GroupInfo;
 import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.whispersystems.libsignal.util.Pair;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
 import org.whispersystems.signalservice.api.SignalServiceMessagePipe;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
@@ -54,26 +61,26 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	static {
 		Security.insertProviderAt(new SecurityProvider(), 1);
-	    Security.addProvider(new BouncyCastleProvider());
+		Security.addProvider(new BouncyCastleProvider());
 	}
 
-    public static final PropertyDescriptor PROP_STORE_PATH = new PropertyDescriptor
-            .Builder().name("StorePath")
-            .displayName("Store path")
-            .description("Path where signal-cli stores the data")
-            .required(true)
-            .addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
-            .build();
+	public static final PropertyDescriptor PROP_STORE_PATH = new PropertyDescriptor
+			.Builder().name("StorePath")
+			.displayName("Store path")
+			.description("Path where signal-cli stores the data")
+			.required(true)
+			.addValidator(StandardValidators.FILE_EXISTS_VALIDATOR)
+			.build();
 
-    public static final PropertyDescriptor PROP_NUMBER = new PropertyDescriptor
-            .Builder().name("Number")
-            .displayName("Number (username)")
-            .description("User name for signal, usually the number in form +<country_code><number>")
-            .required(true)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .build();
+	public static final PropertyDescriptor PROP_NUMBER = new PropertyDescriptor
+			.Builder().name("Number")
+			.displayName("Number (username)")
+			.description("User name for signal, usually the number in form +<country_code><number>")
+			.required(true)
+			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+			.build();
 
-    private static final List<PropertyDescriptor> properties;
+	private static final List<PropertyDescriptor> properties;
 
 	private Manager manager;
 
@@ -92,57 +99,57 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private Field fieldMessagePipe;
 
-    static {
-        final List<PropertyDescriptor> props = new ArrayList<>();
-        props.add(PROP_STORE_PATH);
-        props.add(PROP_NUMBER);
-        properties = Collections.unmodifiableList(props);
-    }
+	static {
+		final List<PropertyDescriptor> props = new ArrayList<>();
+		props.add(PROP_STORE_PATH);
+		props.add(PROP_NUMBER);
+		properties = Collections.unmodifiableList(props);
+	}
 
-    @Override
-    protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return properties;
-    }
+	@Override
+	protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+		return properties;
+	}
 
-    /**
-     * @param context
-     *            the configuration context
-     * @throws InitializationException
-     *             if unable to create a database connection
-     */
-    @OnEnabled
-    public void onEnabled(final ConfigurationContext context) throws InitializationException {
-    	String storeFileString = context.getProperty(PROP_STORE_PATH).getValue();
-    	String number = context.getProperty(PROP_NUMBER).getValue();
-    	
-    	try {
-    		File storeFile = new File(storeFileString);
+	/**
+	 * @param context
+	 *            the configuration context
+	 * @throws InitializationException
+	 *             if unable to create a database connection
+	 */
+	@OnEnabled
+	public void onEnabled(final ConfigurationContext context) throws InitializationException {
+		String storeFileString = context.getProperty(PROP_STORE_PATH).getValue();
+		String number = context.getProperty(PROP_NUMBER).getValue();
 
-    		SignalServiceConfiguration serviceConfiguration = ServiceConfig.createDefaultServiceConfiguration(USER_AGENT);
-    		manager = Manager.init(number, storeFile, serviceConfiguration, USER_AGENT);
-    		
-            manager.checkAccountState();
+		try {
+			File storeFile = new File(storeFileString);
+
+			SignalServiceConfiguration serviceConfiguration = ServiceConfig.createDefaultServiceConfiguration(USER_AGENT);
+			manager = Manager.init(number, storeFile, serviceConfiguration, USER_AGENT);
+
+			manager.checkAccountState();
 
 			account = getField(manager, "account");
 			accountManager = getField(manager, "accountManager");
-			
+
 			accountFileChannel = getField(account, "fileChannel");
 			accountFileLock = getField(account, "lock");
-			
+
 			if(!manager.isRegistered()) {
 				throw new InitializationException("Signal manager still not registered");
 			}
-			
+
 			//Test
 			getMessageReceiver();
 			getMessageSender();
-			
+
 			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
 			methodDecrypt.setAccessible(true);
-			
+
 			fieldMessagePipe = Manager.class.getDeclaredField("messagePipe");
 			fieldMessagePipe.setAccessible(true);
-			
+
 			this.number = number;
 		} catch (IOException e) {
 			throw new InitializationException(e.getMessage(), e);
@@ -159,60 +166,60 @@ public class SignalMessengerService extends AbstractControllerService implements
 		} catch (NoSuchFieldException e) {
 			throw new InitializationException(e.getMessage(), e);
 		}
-    }
+	}
 
-    public SignalServiceMessagePipe getMessagePipe() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+	public SignalServiceMessagePipe getMessagePipe() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
 		SignalServiceMessagePipe messagePipe = (SignalServiceMessagePipe) fieldMessagePipe.get(manager);
 
-    	if (messagePipe == null) {
-            messagePipe = getMessageReceiver().createMessagePipe();
-            fieldMessagePipe.set(manager, messagePipe);
-        }
-    	
+		if (messagePipe == null) {
+			messagePipe = getMessageReceiver().createMessagePipe();
+			fieldMessagePipe.set(manager, messagePipe);
+		}
+
 		return messagePipe;
-    }
+	}
 
 	public SignalServiceMessageReceiver getMessageReceiver() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-		Method methodGetMessageReceiver = Manager.class.getDeclaredMethod("getMessageReceiver");
+		Method methodGetMessageReceiver = Manager.class.getDeclaredMethod("getOrCreateMessageReceiver");
 		methodGetMessageReceiver.setAccessible(true);
 		SignalServiceMessageReceiver messageReceiver = (SignalServiceMessageReceiver) methodGetMessageReceiver.invoke(manager);
 		return messageReceiver;
 	}
 
 	public SignalServiceMessageSender getMessageSender() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-		Method methodGetMessageReceiver = Manager.class.getDeclaredMethod("getMessageSender");
+		Method methodGetMessageReceiver = Manager.class.getDeclaredMethod("createMessageSender");
 		methodGetMessageReceiver.setAccessible(true);
 		SignalServiceMessageSender messageSender = (SignalServiceMessageSender) methodGetMessageReceiver.invoke(manager);
 		return messageSender;
 	}
-	
+
 	private List<SendMessageResult> sendMessageWithAttachment(SignalServiceDataMessage.Builder builder, Collection<SignalServiceAddress> recipients) throws NoSuchMethodException, SecurityException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
 		Method methodSendMessage = Manager.class.getDeclaredMethod("sendMessage", SignalServiceDataMessage.Builder.class, Collection.class);
 		methodSendMessage.setAccessible(true);
 
 		@SuppressWarnings("unchecked")
-		List<SendMessageResult> results = (List<SendMessageResult>) methodSendMessage.invoke(manager, builder, recipients);
-		return results;
+		Pair<Long, List<SendMessageResult>> results = (Pair<Long, List<SendMessageResult>>) methodSendMessage.invoke(manager, builder, recipients);
+		return results.second();
 	}
 
-    @OnDisabled
-    public void onDisable() {
-    	if(accountFileChannel != null) {
-    		try {
-    			accountFileChannel.close();
-    		} catch (IOException e) {}
-    	}
+	@OnDisabled
+	public void onDisable() {
+		if(accountFileChannel != null) {
+			try {
+				accountFileChannel.close();
+			} catch (IOException e) {}
+		}
 
-    	if(accountFileLock != null) {
-    		try {
-    			accountFileLock.close();
-    		} catch (IOException e) {}
-    	}
-    	
-    	try {
+		if(accountFileLock != null) {
+			try {
+				accountFileLock.close();
+			} catch (IOException e) {}
+		}
+
+		try {
 			manager.close();
 		} catch (IOException e) {}
-    }
+	}
 
 	@SuppressWarnings("unchecked")
 	private static final <T> T getField(Object obj, String name) throws NoSuchFieldException, IllegalAccessException {
@@ -229,14 +236,77 @@ public class SignalMessengerService extends AbstractControllerService implements
 	public void saveAccount() {
 		account.save();
 	}
-	
+
 	public SignalServiceContent decryptMessage(SignalServiceEnvelope envelope) throws IllegalStateException {
 		try {
 			return (SignalServiceContent) methodDecrypt.invoke(manager, envelope);
 		} catch (Exception e) {
 			throw new IllegalStateException(e.getMessage(), e);
 		}
-    }
+	}
+
+	public List<SendMessageResult> sendGroupMessage(List<String> groups, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException, InvocationTargetException {
+		List<SendMessageResult> result = null;
+
+		List<GroupInfo> availableGroups = account.getGroupStore().getGroups();
+		if(availableGroups == null || availableGroups.size() < 1)
+			throw new ProcessException("Could not find any joined groups for this account: " + account.getUsername());
+
+		Map<String, GroupInfo> foundGroups = new LinkedHashMap<>(groups.size());
+
+		for (String givenGroup : groups) {
+			GroupInfo targetGroup = null;
+
+			targetGroup = getGroupBasedOnTitle(availableGroups, givenGroup);
+
+			//The target group has not been found using title, try id
+			if(targetGroup == null) {
+				getLogger().debug("Could not find a group using name, trying with base64 id");
+				targetGroup = getGroupBasedOnId(availableGroups, givenGroup);
+			}
+
+			//The target group was not found using title nor id
+			if(targetGroup == null) {
+				//TODO what now!?
+				throw new IllegalStateException("Could not find a group that matches: " + givenGroup);
+			} else {
+				GroupInfo existingGroup = foundGroups.put(givenGroup, targetGroup);
+				if(existingGroup != null) {
+					getLogger().warn("The given group identifier \"" + givenGroup + "\" matches at least two groups. Duplicate groups is ignored!");
+				}
+			}
+		}
+
+		try {
+			SignalServiceMessageSender messageSender = getMessageSender();
+			for (GroupInfo g : foundGroups.values()) {
+				try {
+					SignalServiceDataMessage.Builder messageBuilder = SignalServiceDataMessage.newBuilder().withBody(body);
+
+					updateLoadAttachments(attachment, messageSender, messageBuilder);
+
+					GroupUtils.setGroupContext(messageBuilder, g);
+					messageBuilder.withExpiration(g.getMessageExpirationTime());
+
+					return sendMessageWithAttachment(messageBuilder, g.getMembersWithout(account.getSelfAddress()));
+				} catch (IOException e) {
+					throw e;
+				} catch (InvocationTargetException e) {
+					throw e;
+				} catch (Exception e) {
+					throw new IllegalStateException(e.getMessage(), e);
+				}
+			}
+		} catch (IOException e) {
+			throw e;
+		} catch (InvocationTargetException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new IllegalStateException(e.getMessage(), e);
+		}
+
+		return result;
+	}
 
 	/**
 	 * @param address - {@link List} of numbers to send the message to, can not be null. If the given list is empty, this method will return immediately.
@@ -250,29 +320,18 @@ public class SignalMessengerService extends AbstractControllerService implements
 	public List<SendMessageResult> sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException, InvocationTargetException {
 		Objects.requireNonNull(address);
 		Objects.requireNonNull(body);
-		
+
 		if(address.isEmpty())
 			return Collections.emptyList();
-		
+
 		try {
 			SignalServiceMessageSender messageSender = getMessageSender();
 			SignalServiceDataMessage.Builder messageBuilder = SignalServiceDataMessage.newBuilder().withBody(body);
 
-			//Upload attachments
-			if (attachment != null) {
-				List<SignalServiceAttachment> attachmentPointers = new ArrayList<>(1);
-				if (attachment.isStream()) {
-					SignalServiceAttachmentPointer pointer = messageSender.uploadAttachment(attachment.asStream());
-					attachmentPointers.add(pointer);
-                } else if (attachment.isPointer()) {
-                    attachmentPointers.add(attachment.asPointer());
-				}
-				
-				messageBuilder.withAttachments(attachmentPointers);
-			}
-			
+			updateLoadAttachments(attachment, messageSender, messageBuilder);
+
 			messageBuilder.withProfileKey(account.getProfileKey().serialize());
-			
+
 			//Convert string numbers to SignalServiceAddress
 			Collection<SignalServiceAddress> numbers = new LinkedHashSet<>(address.size());
 			for (String string : address) {
@@ -284,7 +343,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 					getLogger().error(exc.getMessage(), exc);
 				}
 			}
-			
+
 			return sendMessageWithAttachment(messageBuilder, numbers);
 		} catch (IOException e) {
 			throw e;
@@ -295,8 +354,54 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
 	}
 
+	private void updateLoadAttachments(SignalServiceAttachmentStream attachment, SignalServiceMessageSender messageSender,
+			SignalServiceDataMessage.Builder messageBuilder) throws IOException {
+
+		if(attachment == null)
+			return;
+
+		//Upload attachments
+		List<SignalServiceAttachment> attachmentPointers = new ArrayList<>(1);
+		if (attachment.isStream()) {
+			SignalServiceAttachmentPointer pointer = messageSender.uploadAttachment(attachment.asStream());
+			attachmentPointers.add(pointer);
+		} else if (attachment.isPointer()) {
+			attachmentPointers.add(attachment.asPointer());
+		}
+
+		messageBuilder.withAttachments(attachmentPointers);
+	}
+
 	@Override
 	public void sendMessageReaction(String emoji, boolean remove, String targetAuthor, long targetSentTimestamp, List<String> recipients) throws IOException, EncapsulatedExceptions, InvalidNumberException {
 		manager.sendMessageReaction(emoji, remove, targetAuthor, targetSentTimestamp, recipients);
+	}
+
+	private GroupInfo getGroupBasedOnId(List<GroupInfo> availableGroups, String givenGroup) {
+		try {
+			GroupId givenGroupId = GroupId.fromBase64(givenGroup);
+
+			for (GroupInfo groupInfo : availableGroups) {
+				if(givenGroupId.equals(groupInfo.getGroupId())) {
+					return groupInfo;
+				}
+			}
+
+		} catch (GroupIdFormatException e) {
+			getLogger().debug("The given string \"" + givenGroup + "\" can not be converted to group id");
+		}
+
+		return null;
+	}
+
+	private GroupInfo getGroupBasedOnTitle(List<GroupInfo> availableGroups, String givenGroup) {
+		for (GroupInfo groupInfo : availableGroups) {
+			//Check if title matches the group name
+			if(givenGroup.equals(groupInfo.getTitle())) {
+				return groupInfo;
+			}
+		}
+
+		return null;
 	}
 }

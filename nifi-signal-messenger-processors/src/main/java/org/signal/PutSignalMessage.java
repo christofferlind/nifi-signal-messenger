@@ -10,9 +10,11 @@ import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,11 +62,20 @@ public class PutSignalMessage extends AbstractProcessor {
 			.identifiesControllerService(SignalControllerService.class)
 			.build();
 
+	public static final PropertyDescriptor GROUPS = new PropertyDescriptor
+			.Builder().name("groups")
+			.displayName("Groups")
+			.description("You can either specify the group title or the base64 encoded id. Multiple groups can be provided using comma (,)")
+			.required(false)
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
+
 	public static final PropertyDescriptor RECIPIENTS = new PropertyDescriptor
 			.Builder().name("Recipients")
 			.displayName("Recipients")
-			.description("Multiple numbers are separeted with comma (,)")
-			.required(true)
+			.description("Multiple numbers can be provided using comma (,)")
+			.required(false)
 			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.build();
@@ -107,6 +118,7 @@ public class PutSignalMessage extends AbstractProcessor {
 		final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
 		descriptors.add(SIGNAL_SERVICE);
 		descriptors.add(RECIPIENTS);
+		descriptors.add(GROUPS);
 		descriptors.add(MESSAGE_CONTENT);
 		descriptors.add(ATTACHMENT);
 		this.descriptors = Collections.unmodifiableList(descriptors);
@@ -140,15 +152,22 @@ public class PutSignalMessage extends AbstractProcessor {
 		}
 
 		SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-		String recipient = context.getProperty(RECIPIENTS).evaluateAttributeExpressions(flowFile).getValue();
+		String groupsString = context.getProperty(GROUPS).evaluateAttributeExpressions(flowFile).getValue();
+		String recipientsString = context.getProperty(RECIPIENTS).evaluateAttributeExpressions(flowFile).getValue();
 		String messageContent = context.getProperty(MESSAGE_CONTENT).evaluateAttributeExpressions(flowFile).getValue();
 
 		String useAttachmentString = context.getProperty(ATTACHMENT).evaluateAttributeExpressions(flowFile).getValue();
 		boolean useAttachment = "true".equalsIgnoreCase(useAttachmentString);
-		
+
 		getLogger().debug("Using attachments: " + useAttachment);
 
 		try {
+			List<String> groups = getCommaSeparatedList(groupsString);
+			List<String> recipients = getCommaSeparatedList(recipientsString);
+			
+			if(groups.isEmpty() && recipients.isEmpty())
+				throw new IllegalStateException("Both groups and recipients can not be empty. At least one must be set");
+				
 			SignalServiceAttachmentStream attachment = null;
 
 			if(useAttachment) {
@@ -167,8 +186,21 @@ public class PutSignalMessage extends AbstractProcessor {
 				}
 			}
 
-			List<String> recipients = getCommaSeparatedRecipients(recipient);
-			List<SendMessageResult> results = signalService.sendMessage(recipients, messageContent, attachment);
+			Collection<SendMessageResult> results = new LinkedList<>();
+
+			//Try send to all groups
+			if(groups.size() > 0) {
+				List<SendMessageResult> r = signalService.sendGroupMessage(groups, messageContent, attachment);
+				if(r != null)
+					results.addAll(r);
+			}
+
+			//Try send to all recipients
+			if(recipients.size() > 0) {
+				List<SendMessageResult> r = signalService.sendMessage(recipients, messageContent, attachment);
+				if(r != null)
+					results.addAll(r);
+			}
 			
 			boolean allOk = true;
 			for (SendMessageResult result : results) {
@@ -188,19 +220,23 @@ public class PutSignalMessage extends AbstractProcessor {
 			Throwable target = e.getTargetException();
 			if(target == null) {
 				getLogger().error(e.getMessage(), e);
-				session.transfer(flowFile, FAILURE);
+				transferToFailureWithMessage(session, flowFile, e.getMessage());
  			} else if(target instanceof UnregisteredUserException){
 				getLogger().error(e.getMessage(), e);
 				flowFile = session.putAttribute(flowFile, "signal.send.failed.unregistered", Boolean.toString(true));
-				session.transfer(flowFile, FAILURE);
+				transferToFailureWithMessage(session, flowFile, e.getMessage());
  			} else {
 				getLogger().error(target.getMessage(), target);
-				session.transfer(flowFile, FAILURE);
+				transferToFailureWithMessage(session, flowFile, target.getMessage());
  			}
 		} catch(Throwable e) {
 			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
+			transferToFailureWithMessage(session, flowFile, e.getMessage());
 		}
+	}
+
+	private void transferToFailureWithMessage(ProcessSession session, FlowFile flowFile, String message) {
+		session.transfer(session.putAttribute(flowFile, "signal.send.error.message", message), FAILURE);		
 	}
 
 	private void transferFailedFlowFile(final ProcessSession session, FlowFile flowFile, SendMessageResult result) {
@@ -265,11 +301,14 @@ public class PutSignalMessage extends AbstractProcessor {
 				resumableUploadSpec);
 	}
 
-	private List<String> getCommaSeparatedRecipients(String recipient) {
-		String[] split = recipient.split(",");
+	public static final List<String> getCommaSeparatedList(String string) {
+		if(string == null)
+			return Collections.emptyList();
+		
+		String[] split = string.split(",");
 		List<String> recipients = new ArrayList<>(split.length);
-		for (String string : split) {
-			String trimmed = string.trim();
+		for (String element : split) {
+			String trimmed = element.trim();
 			if(trimmed.isEmpty())
 				continue;
 

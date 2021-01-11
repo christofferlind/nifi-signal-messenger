@@ -34,6 +34,8 @@ import org.whispersystems.signalservice.internal.push.UnsupportedDataMessageExce
 public interface SignalControllerService extends ControllerService {
 
 	public List<SendMessageResult> sendMessage(List<String> address, String body, SignalServiceAttachmentStream attachment) throws ProcessException, IOException, InvocationTargetException;
+
+	public List<SendMessageResult> sendGroupMessage(List<String> groups, String body, SignalServiceAttachmentStream attachment) throws ProcessException, IOException, InvocationTargetException;
 	
 	public void saveAccount();
 
