@@ -37,6 +37,7 @@ import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Reaction;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
+import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
 import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
@@ -57,7 +58,10 @@ import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage
 
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message")
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message"),
+
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_ID, description="If the data-message is a message to a group, then this attribute will be populated with the base64 encoded group id"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_TITLE, description="If the data-message is a message to a group, then this attribute will be populated with the title of the group"),
 	})
 public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
@@ -72,6 +76,9 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 	public static final String ATTRIBUTE_MESSAGE_REACTION_EMOJI = 				"signal.message.reaction.emoji";
 	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR = 		"signal.message.reaction.target.author";
 	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP = 	"signal.message.reaction.target.timestamp";
+
+	public static final String ATTRIBUTE_MESSAGE_GROUP_ID = 			"signal.message.group.id";
+	public static final String ATTRIBUTE_MESSAGE_GROUP_TITLE = 			"signal.message.group.title";
 
 	public  static final String ATTRIBUTE_ERROR_MESSAGE = 				"signal.error.message";
 
@@ -225,7 +232,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 				if(optionalDataMessage.isPresent()) {
 					SignalServiceDataMessage dataMessage = optionalDataMessage.get();
 					attributes.put(ATTRIBUTE_MESSAGE, dataMessage.getBody().or(""));
-
+					
 					boolean viewOnce = dataMessage.isViewOnce();
 					attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(viewOnce));
 					
@@ -234,6 +241,15 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 						attributes.put(ATTRIBUTE_MESSAGE_REACTION_EMOJI, reaction.getEmoji());
 						attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, reaction.getTargetAuthor().getNumber().get());
 						attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(reaction.getTargetSentTimestamp()));
+					}
+					
+					if(dataMessage.getGroupContext().isPresent()) {
+			            SignalServiceGroupContext groupContext = dataMessage.getGroupContext().get();
+			            String groupId = service.getGroupId(groupContext);
+			            attributes.put(ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
+
+			            String groupTitle = service.getGroupTitle(groupContext);
+			            attributes.put(ATTRIBUTE_MESSAGE_GROUP_TITLE, groupTitle);
 					}
 				}
 			}

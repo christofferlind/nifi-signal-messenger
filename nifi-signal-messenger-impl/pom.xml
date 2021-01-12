@@ -57,6 +57,11 @@
 			<artifactId>signal-service-java</artifactId>
 			<version>${signal.service.version}</version>
 		</dependency>
+		<dependency>
+		    <groupId>com.google.guava</groupId>
+		    <artifactId>guava</artifactId>
+		    <version>30.1-jre</version>
+		</dependency>
 
         <dependency>
             <groupId>org.apache.nifi</groupId>

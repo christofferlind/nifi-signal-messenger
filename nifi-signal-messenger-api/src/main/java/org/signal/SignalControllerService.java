@@ -25,6 +25,7 @@ import org.whispersystems.signalservice.api.messages.SendMessageResult;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
+import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
 import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
 import org.whispersystems.signalservice.api.util.InvalidNumberException;
 import org.whispersystems.signalservice.internal.push.UnsupportedDataMessageException;
@@ -44,8 +45,23 @@ public interface SignalControllerService extends ControllerService {
 	public SignalServiceMessageReceiver getMessageReceiver() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException;
 	
 	public String getSignalUsername();
+
+	/**
+	 * Helper method that returns the base64 encoded id of the group
+	 * @param groupContext, {@link SignalServiceGroupContext}
+	 * @return
+	 */
+	public String getGroupId(SignalServiceGroupContext groupContext);
+
+	/**
+	 * Helper method that returns the group name
+	 * @param groupContext, {@link SignalServiceGroupContext}
+	 * @return
+	 */
+	public String getGroupTitle(SignalServiceGroupContext groupContext);
 	
 	public SignalServiceContent decryptMessage(SignalServiceEnvelope envelope) throws InvalidMetadataMessageException, ProtocolInvalidMessageException, ProtocolDuplicateMessageException, ProtocolLegacyMessageException, ProtocolInvalidKeyIdException, InvalidMetadataVersionException, ProtocolInvalidVersionException, ProtocolNoSessionException, ProtocolInvalidKeyException, ProtocolUntrustedIdentityException, SelfSendException, UnsupportedDataMessageException;
 
 	public void sendMessageReaction(String emoji, boolean remove, String targetAuthor, long targetSentTimestamp, List<String> recipients) throws IOException, EncapsulatedExceptions, InvalidNumberException;
+
 }

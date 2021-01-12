@@ -11,11 +11,13 @@ import java.security.Security;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -31,16 +33,22 @@ import org.asamk.signal.manager.Manager;
 import org.asamk.signal.manager.ServiceConfig;
 import org.asamk.signal.manager.groups.GroupId;
 import org.asamk.signal.manager.groups.GroupIdFormatException;
+import org.asamk.signal.manager.groups.GroupIdV2;
 import org.asamk.signal.manager.groups.GroupUtils;
 import org.asamk.signal.manager.storage.SignalAccount;
 import org.asamk.signal.manager.storage.groups.GroupInfo;
 import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.signal.storageservice.protos.groups.local.DecryptedGroup;
+import org.signal.zkgroup.auth.AuthCredentialResponse;
+import org.signal.zkgroup.groups.GroupSecretParams;
 import org.whispersystems.libsignal.util.Pair;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
 import org.whispersystems.signalservice.api.SignalServiceMessagePipe;
 import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.SignalServiceMessageSender;
+import org.whispersystems.signalservice.api.groupsv2.GroupsV2Api;
+import org.whispersystems.signalservice.api.groupsv2.GroupsV2AuthorizationString;
 import org.whispersystems.signalservice.api.messages.SendMessageResult;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachment;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentPointer;
@@ -48,10 +56,16 @@ import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStre
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
+import org.whispersystems.signalservice.api.messages.SignalServiceGroup;
+import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
+import org.whispersystems.signalservice.api.messages.SignalServiceGroupV2;
 import org.whispersystems.signalservice.api.push.SignalServiceAddress;
 import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
 import org.whispersystems.signalservice.api.util.InvalidNumberException;
 import org.whispersystems.signalservice.internal.configuration.SignalServiceConfiguration;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 @Tags({ "Signal", "Messenger"})
 @CapabilityDescription("Signal Messenger service")
@@ -86,19 +100,22 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private SignalAccount account;
 
-	@SuppressWarnings("unused")
-	private SignalServiceAccountManager accountManager;
+	private SignalServiceAccountManager accountManager = null;
 
 	private String number;
 
 	private Method methodDecrypt;
 
+	private Method methodGetGroupAuthForToday;
+	
 	private FileChannel accountFileChannel;
 
 	private FileLock accountFileLock;
 
 	private Field fieldMessagePipe;
 
+	private Cache<Integer, AuthCredentialResponse> cacheGroupAuthorization = null;
+	
 	static {
 		final List<PropertyDescriptor> props = new ArrayList<>();
 		props.add(PROP_STORE_PATH);
@@ -149,6 +166,17 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 			fieldMessagePipe = Manager.class.getDeclaredField("messagePipe");
 			fieldMessagePipe.setAccessible(true);
+			
+		    methodGetGroupAuthForToday = Manager.class.getDeclaredMethod("getGroupAuthForToday", GroupSecretParams.class);
+		    methodGetGroupAuthForToday.setAccessible(true);
+			
+			cacheGroupAuthorization = CacheBuilder.newBuilder()
+				      .expireAfterAccess(5, TimeUnit.DAYS)
+				      .initialCapacity(10)
+				      .concurrencyLevel(1)
+				      .build();
+			
+			updateGroupAuthorizationCache();
 
 			this.number = number;
 		} catch (IOException e) {
@@ -166,6 +194,18 @@ public class SignalMessengerService extends AbstractControllerService implements
 		} catch (NoSuchFieldException e) {
 			throw new InitializationException(e.getMessage(), e);
 		}
+	}
+
+    public static final int currentTimeDays() {
+        return (int) TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis());
+    }
+
+	private void updateGroupAuthorizationCache() throws IOException {
+		// Returns credentials for the next 7 days
+		int today = currentTimeDays();
+        GroupsV2Api groupsV2Api = accountManager.getGroupsV2Api();
+        HashMap<Integer, AuthCredentialResponse> credentials = groupsV2Api.getCredentials(today);
+        cacheGroupAuthorization.putAll(credentials);
 	}
 
 	public SignalServiceMessagePipe getMessagePipe() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
@@ -403,5 +443,88 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
 
 		return null;
+	}
+
+	@Override
+	public String getGroupId(SignalServiceGroupContext groupContext) {
+		if (groupContext.getGroupV1().isPresent()) {
+            SignalServiceGroup groupInfo = groupContext.getGroupV1().get();
+            return GroupId.v1(groupInfo.getGroupId()).toString();
+        } else if (groupContext.getGroupV2().isPresent()) {
+            SignalServiceGroupV2 groupInfo = groupContext.getGroupV2().get();
+            return GroupUtils.getGroupIdV2(groupInfo.getMasterKey()).toBase64();
+        }
+		
+		throw new UnsupportedOperationException("Unsupported group version");
+	}
+	
+	public String getGroupTitle(SignalServiceGroupContext groupContext) {
+		if (groupContext.getGroupV1().isPresent()) {
+            SignalServiceGroup groupInfo = groupContext.getGroupV1().get();
+            
+            //Check local signal-cli cache first
+            GroupInfo group = manager.getGroup(GroupId.v1(groupInfo.getGroupId()));
+            if(group != null) {
+            	String title = group.getTitle();
+            	if(title != null)
+            		return title;
+            }
+            
+            return groupInfo.getName().or("");
+        } else if(groupContext.getGroupV2().isPresent()) {
+        	SignalServiceGroupV2 groupV2 = groupContext.getGroupV2().get();
+        	
+            //Check local signal-cli cache first
+        	String title = getGroupTitleFromSignalCliCache(groupV2);
+        	if(title != null)
+        		return title;
+        	
+            //If not found in local cache try get the name from the server.
+        	title = getGroupTitleFromSignalServer(groupV2);
+        	if(title != null)
+        		return title;
+        }
+		
+        return "";
+	}
+
+	/**
+	 * @param groupV2
+	 * @return null if it fails
+	 */
+	private String getGroupTitleFromSignalServer(SignalServiceGroupV2 groupV2) {
+		try {
+			GroupSecretParams groupSecretParams = GroupSecretParams.deriveFromMasterKey(groupV2.getMasterKey());
+			int today = SignalMessengerService.currentTimeDays();
+			
+			AuthCredentialResponse credentials = cacheGroupAuthorization.getIfPresent(today);
+			if(credentials == null) {
+				updateGroupAuthorizationCache();
+				credentials = cacheGroupAuthorization.getIfPresent(today);
+			}
+			
+			if(credentials == null)
+				throw new IllegalStateException("Could not load credentials");
+			
+			GroupsV2Api groupsV2Api = accountManager.getGroupsV2Api();
+			GroupsV2AuthorizationString authorizationString = groupsV2Api.getGroupsV2AuthorizationString(
+																account.getUuid(),
+												                today,
+												                groupSecretParams,
+												                credentials);
+			
+			DecryptedGroup decryptedGroup = groupsV2Api.getGroup(groupSecretParams, authorizationString);
+			return decryptedGroup.getTitle();
+		} catch (Throwable e) {
+			getLogger().error(e.getMessage(), e);
+		}
+		
+		return null;
+	}
+
+	private String getGroupTitleFromSignalCliCache(SignalServiceGroupV2 groupInfo) {
+		GroupIdV2 idV2 = GroupUtils.getGroupIdV2(groupInfo.getMasterKey());
+		GroupInfo group = manager.getGroup(idV2);
+		return group.getTitle();
 	}
 }
