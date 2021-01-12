@@ -1,6 +1,8 @@
 package org.signal;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -20,6 +22,8 @@ import org.slf4j.LoggerFactory;
 
 public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(TestConsumeSignalMessage.class);
+
+	private static final String TEST_GROUP = System.getenv("nifi-signal-messenger.test.group");
 
     private TestRunner runner;
 
@@ -63,13 +67,39 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	serviceB.sendMessage(Arrays.asList(numberA), message, null);
     	
     	runner.setRunSchedule(500);
-    	runner.run(3);
+    	runner.run(10);
     	
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
     	assertEquals(1, flowFiles.size());
     	MockFlowFile flowFile = flowFiles.get(0);
     	assertEquals(message, flowFile.getAttribute("signal.message"));
     	assertEquals(numberB, flowFile.getAttribute("signal.sender.number"));
+    }
+
+    @Test
+    public void consumeGroupMessage() throws ProcessException, InvocationTargetException, IOException, InterruptedException {
+    	if(isSettingsEmpty() || TEST_GROUP == null || TEST_GROUP.isBlank()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+
+    	runner.clearTransferState();
+    	String message = "Testing: " + Double.toString(Math.random());
+    	serviceB.sendGroupMessage(Arrays.asList(TEST_GROUP), message, null);
+    	
+    	runner.setRunSchedule(500);
+    	runner.run(10);
+    	
+    	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
+    	assertEquals(1, flowFiles.size());
+    	MockFlowFile flowFile = flowFiles.get(0);
+    	assertEquals(message, flowFile.getAttribute("signal.message"));
+    	assertEquals(numberB, flowFile.getAttribute("signal.sender.number"));
+    	
+    	assertNotNull(flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_ID));
+    	assertNotEquals("", flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_ID));
+    	assertEquals(TEST_GROUP, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_TITLE));
     }
 
 }
