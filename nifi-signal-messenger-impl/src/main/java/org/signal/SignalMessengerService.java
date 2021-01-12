@@ -106,8 +106,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private Method methodDecrypt;
 
-	private Method methodGetGroupAuthForToday;
-	
 	private FileChannel accountFileChannel;
 
 	private FileLock accountFileLock;
@@ -166,9 +164,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 			fieldMessagePipe = Manager.class.getDeclaredField("messagePipe");
 			fieldMessagePipe.setAccessible(true);
-			
-		    methodGetGroupAuthForToday = Manager.class.getDeclaredMethod("getGroupAuthForToday", GroupSecretParams.class);
-		    methodGetGroupAuthForToday.setAccessible(true);
 			
 			cacheGroupAuthorization = CacheBuilder.newBuilder()
 				      .expireAfterAccess(5, TimeUnit.DAYS)
