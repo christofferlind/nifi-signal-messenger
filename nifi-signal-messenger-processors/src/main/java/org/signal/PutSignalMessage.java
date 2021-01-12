@@ -224,7 +224,7 @@ public class PutSignalMessage extends AbstractProcessor {
  			} else if(target instanceof UnregisteredUserException){
 				getLogger().error(e.getMessage(), e);
 				flowFile = session.putAttribute(flowFile, "signal.send.failed.unregistered", Boolean.toString(true));
-				transferToFailureWithMessage(session, flowFile, e.getMessage());
+				transferToFailureWithMessage(session, flowFile, e.getMessage() == null ? "UnregisteredUserException" : e.getMessage());
  			} else {
 				getLogger().error(target.getMessage(), target);
 				transferToFailureWithMessage(session, flowFile, target.getMessage());
@@ -236,6 +236,9 @@ public class PutSignalMessage extends AbstractProcessor {
 	}
 
 	private void transferToFailureWithMessage(ProcessSession session, FlowFile flowFile, String message) {
+		if(message == null)
+			message = "";
+		
 		session.transfer(session.putAttribute(flowFile, "signal.send.error.message", message), FAILURE);		
 	}
 
