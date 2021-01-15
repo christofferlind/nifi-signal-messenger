@@ -5,8 +5,6 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.security.Security;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -18,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -30,6 +29,7 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.asamk.signal.manager.Manager;
+import org.asamk.signal.manager.Manager.ReceiveMessageHandler;
 import org.asamk.signal.manager.ServiceConfig;
 import org.asamk.signal.manager.groups.GroupId;
 import org.asamk.signal.manager.groups.GroupIdFormatException;
@@ -44,8 +44,6 @@ import org.signal.zkgroup.auth.AuthCredentialResponse;
 import org.signal.zkgroup.groups.GroupSecretParams;
 import org.whispersystems.libsignal.util.Pair;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
-import org.whispersystems.signalservice.api.SignalServiceMessagePipe;
-import org.whispersystems.signalservice.api.SignalServiceMessageReceiver;
 import org.whispersystems.signalservice.api.SignalServiceMessageSender;
 import org.whispersystems.signalservice.api.groupsv2.GroupsV2Api;
 import org.whispersystems.signalservice.api.groupsv2.GroupsV2AuthorizationString;
@@ -66,6 +64,7 @@ import org.whispersystems.signalservice.internal.configuration.SignalServiceConf
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.collect.EvictingQueue;
 
 @Tags({ "Signal", "Messenger"})
 @CapabilityDescription("Signal Messenger service")
@@ -106,13 +105,18 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private Method methodDecrypt;
 
-	private FileChannel accountFileChannel;
-
-	private FileLock accountFileLock;
-
-	private Field fieldMessagePipe;
-
 	private Cache<Integer, AuthCredentialResponse> cacheGroupAuthorization = null;
+
+	//Package visibility for testing
+	Thread receiveMessagesThread;
+
+	private EvictingQueue<Pair<SignalServiceEnvelope, SignalServiceContent>> messageQueue;
+	
+	private final static Object lockListeners = new Object();
+	private Collection<BiConsumer<SignalServiceEnvelope, SignalServiceContent>> messageListeners = 
+			new LinkedHashSet<>(10);
+
+	private Map<String, Long> messageListenersLastMessage = new HashMap<>(10);
 	
 	static {
 		final List<PropertyDescriptor> props = new ArrayList<>();
@@ -148,22 +152,17 @@ public class SignalMessengerService extends AbstractControllerService implements
 			account = getField(manager, "account");
 			accountManager = getField(manager, "accountManager");
 
-			accountFileChannel = getField(account, "fileChannel");
-			accountFileLock = getField(account, "lock");
-
 			if(!manager.isRegistered()) {
 				throw new InitializationException("Signal manager still not registered");
 			}
-
+			
 			//Test
-			getMessageReceiver();
 			getMessageSender();
 
 			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
 			methodDecrypt.setAccessible(true);
 
-			fieldMessagePipe = Manager.class.getDeclaredField("messagePipe");
-			fieldMessagePipe.setAccessible(true);
+			initMessageReceiver();
 			
 			cacheGroupAuthorization = CacheBuilder.newBuilder()
 				      .expireAfterAccess(5, TimeUnit.DAYS)
@@ -191,6 +190,84 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
 	}
 
+	private void initMessageReceiver() {
+		if(getLogger().isDebugEnabled()) getLogger().debug("Starting receive message thread");
+		messageQueue = EvictingQueue.create(1_000);
+		
+		receiveMessagesThread = new Thread(() -> {
+			try {
+				ReceiveMessageHandler handler = SignalMessengerService.this::handleMessage;
+				
+				while(!Thread.currentThread().isInterrupted()) {
+					this.manager.receiveMessages(
+							15, 
+							TimeUnit.SECONDS, 
+							true, 
+							false, 
+							handler);
+				}
+			} catch (AssertionError e) {
+				if(e.getCause() instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+				onError(e);
+			} catch (Throwable e) {
+				onError(e);
+			}
+		});
+		
+		receiveMessagesThread.start();
+	}
+	
+	public void handleMessage(SignalServiceEnvelope envelope, SignalServiceContent decryptedContent, Throwable e) {
+		if(e != null) {
+			getLogger().error(e.getMessage(), e);
+		}
+		
+		Pair<SignalServiceEnvelope, SignalServiceContent> element = 
+				new Pair<>(envelope, decryptedContent);
+		
+		synchronized (lockListeners) {
+			messageQueue.add(element);
+			
+			notifyListeners(element);
+		}
+	}
+
+	public void addMessageListener(BiConsumer<SignalServiceEnvelope, SignalServiceContent> listener) {
+		synchronized (lockListeners) {
+			messageListeners.add(listener);
+			
+			// For new listener, send all cached messages
+			Long lastMessageTimestamp = messageListenersLastMessage.get(listener.getClass().getCanonicalName());
+			var stream = messageQueue.stream();
+			
+			if(lastMessageTimestamp != null)
+				stream = stream.filter(p -> p.second().getTimestamp() > lastMessageTimestamp);
+			
+			stream.forEach(p -> {
+				listener.accept(p.first(), p.second());
+				messageListenersLastMessage.put(listener.getClass().getCanonicalName(), p.second().getTimestamp());
+			});
+		}
+	}
+
+	public void removeMessageListener(BiConsumer<SignalServiceEnvelope, SignalServiceContent> listener) {
+		synchronized (lockListeners) {
+			messageListeners.remove(listener);
+		}
+	}
+
+	private void notifyListeners(Pair<SignalServiceEnvelope, SignalServiceContent> element) {
+		for (BiConsumer<SignalServiceEnvelope, SignalServiceContent> consumer : messageListeners) {
+			SignalServiceContent msg = element.second();
+
+			consumer.accept(element.first(), msg);
+			messageListenersLastMessage.put(consumer.getClass().getCanonicalName(), msg.getTimestamp());
+		}
+	}
+	
     public static final int currentTimeDays() {
         return (int) TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis());
     }
@@ -201,24 +278,6 @@ public class SignalMessengerService extends AbstractControllerService implements
         GroupsV2Api groupsV2Api = accountManager.getGroupsV2Api();
         HashMap<Integer, AuthCredentialResponse> credentials = groupsV2Api.getCredentials(today);
         cacheGroupAuthorization.putAll(credentials);
-	}
-
-	public SignalServiceMessagePipe getMessagePipe() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
-		SignalServiceMessagePipe messagePipe = (SignalServiceMessagePipe) fieldMessagePipe.get(manager);
-
-		if (messagePipe == null) {
-			messagePipe = getMessageReceiver().createMessagePipe();
-			fieldMessagePipe.set(manager, messagePipe);
-		}
-
-		return messagePipe;
-	}
-
-	public SignalServiceMessageReceiver getMessageReceiver() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-		Method methodGetMessageReceiver = Manager.class.getDeclaredMethod("getOrCreateMessageReceiver");
-		methodGetMessageReceiver.setAccessible(true);
-		SignalServiceMessageReceiver messageReceiver = (SignalServiceMessageReceiver) methodGetMessageReceiver.invoke(manager);
-		return messageReceiver;
 	}
 
 	public SignalServiceMessageSender getMessageSender() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
@@ -239,18 +298,19 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	@OnDisabled
 	public void onDisable() {
-		if(accountFileChannel != null) {
+		if(receiveMessagesThread != null) {
 			try {
-				accountFileChannel.close();
-			} catch (IOException e) {}
+				receiveMessagesThread.interrupt();
+			} catch (Exception e) {
+				getLogger().error(e.getMessage(), e);
+			}
 		}
 
-		if(accountFileLock != null) {
-			try {
-				accountFileLock.close();
-			} catch (IOException e) {}
+		synchronized (lockListeners) {
+			messageListeners.clear();
+			messageQueue.clear();
 		}
-
+		
 		try {
 			manager.close();
 		} catch (IOException e) {}
@@ -521,5 +581,9 @@ public class SignalMessengerService extends AbstractControllerService implements
 		GroupIdV2 idV2 = GroupUtils.getGroupIdV2(groupInfo.getMasterKey());
 		GroupInfo group = manager.getGroup(idV2);
 		return group.getTitle();
+	}
+	
+	public void onError(Throwable e) {
+		getLogger().error(e.getMessage(), e);
 	}
 }

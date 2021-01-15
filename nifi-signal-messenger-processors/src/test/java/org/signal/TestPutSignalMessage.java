@@ -28,7 +28,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class TestPutSignalMessage extends AbstractSignalTest {
+public class TestPutSignalMessage extends AbstractMultiNumberTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(TestPutSignalMessage.class);
 	
 	private TestRunner runner;
@@ -42,8 +42,9 @@ public class TestPutSignalMessage extends AbstractSignalTest {
         runner = TestRunners.newTestRunner(PutSignalMessage.class);
 
         setSignaleService(runner);
-        runner.setProperty(PutSignalMessage.SIGNAL_SERVICE, serviceIdentifier);
-        runner.enableControllerService(service);
+        runner.setProperty(PutSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runner.enableControllerService(serviceA);
+        runner.enableControllerService(serviceB);
     }
 
 	@After
@@ -51,8 +52,12 @@ public class TestPutSignalMessage extends AbstractSignalTest {
     	if(runner == null)
     		return;
     	
-    	if(runner.isControllerServiceEnabled(service)) {
-    		runner.disableControllerService(service);
+    	if(runner.isControllerServiceEnabled(serviceA)) {
+    		runner.disableControllerService(serviceA);
+    	}
+    	
+    	if(runner.isControllerServiceEnabled(serviceB)) {
+    		runner.disableControllerService(serviceB);
     	}
     }
 
@@ -65,7 +70,7 @@ public class TestPutSignalMessage extends AbstractSignalTest {
 		}
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.RECIPIENTS, number);
+    	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB);
     	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, "Testing " + PutSignalMessage.class.getSimpleName());
     	runner.enqueue(new byte[0]);
     	runner.run();
@@ -81,7 +86,7 @@ public class TestPutSignalMessage extends AbstractSignalTest {
 		}
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.RECIPIENTS, number+"12332,"+number);
+    	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB+"12332,"+numberB);
     	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, "Testing " + PutSignalMessage.class.getSimpleName());
     	runner.enqueue(new byte[0]);
     	runner.run();

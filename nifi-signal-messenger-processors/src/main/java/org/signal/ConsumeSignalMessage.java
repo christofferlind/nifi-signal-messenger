@@ -1,6 +1,5 @@
 package org.signal;
 
-import java.lang.Thread.State;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -9,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
@@ -112,8 +111,12 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
     private Set<Relationship> relationships;
     
-	private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
-	private volatile SignalMessageReceiverThread threadListen;
+    private SignalControllerService service = null;
+
+    private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
+
+	private volatile BiConsumer<SignalServiceEnvelope, SignalServiceContent> messageListener = null;
+	private boolean ignoreReceipts;
 
     @Override
     protected void init(final ProcessorInitializationContext context) {
@@ -140,27 +143,8 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     
     @OnScheduled
     public void onScheduled(ProcessContext context) throws ProcessException {
-    	SignalControllerService service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-    	boolean ignoreReceipts =  context.getProperty(IGNORE_RECEIPT_MESSAGE).asBoolean();
-    	ComponentLog logger = getLogger();
-
-    	if(threadListen == null) {
-			try {
-				Consumer<SignalServiceEnvelope> messageHandler = 
-						envelope -> handleEnvelope(service, ignoreReceipts, envelope);
-						
-				threadListen = new SignalMessageReceiverThread(service, messageHandler, this::onError);
-				
-				//This ensures that the messagepipe exists when the thread is started
-				//It takes some time to get connected
-				service.getMessagePipe();
-				
-				if(logger.isDebugEnabled()) logger.debug("Signal message listener created");
-			} catch (Throwable e) {
-				stopListeningThread();
-				throw new ProcessException("Error initializing ConsumeSignalMessage", e);
-			}
-		}
+    	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
+    	ignoreReceipts = context.getProperty(IGNORE_RECEIPT_MESSAGE).asBoolean();
     }
     
     private void onError(Throwable e) {
@@ -170,30 +154,27 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     
     @OnUnscheduled
     public void unschedule() {
-    	stopListeningThread();
+    	if(messageListener != null && service != null) {
+    		service.removeMessageListener(messageListener);
+    	}
+    	
+    	messageListener = null;
+    	
     }
 
-	private void stopListeningThread() {
-		if(threadListen != null) {
-    		threadListen.interrupt();
-    		threadListen = null;
-    		if(getLogger().isDebugEnabled()) getLogger().debug("Signal message listener interrupted");
-    	}
-	}
-    
 	@Override
 	public void onTrigger(ProcessContext context, ProcessSessionFactory sessionFactory) throws ProcessException {
-        sessionFactoryReference.compareAndSet(null, sessionFactory);
-        
-        if(threadListen != null && State.NEW.equals(threadListen.getState())) {
-			threadListen.start();
-			if(getLogger().isDebugEnabled()) getLogger().debug("Signal message listener started");
-		}
+    	sessionFactoryReference.compareAndSet(null, sessionFactory);
+    	
+    	if(messageListener == null) {
+	    	messageListener = (env, msg) -> handleEnvelope(service, ignoreReceipts, env, msg);
+	    	service.addMessageListener(messageListener);
+    	}
         
         context.yield();
 	}
 
-	private void handleEnvelope(SignalControllerService service, boolean ignoreReceipts, SignalServiceEnvelope envelope) {
+	private void handleEnvelope(SignalControllerService service, boolean ignoreReceipts, SignalServiceEnvelope envelope, SignalServiceContent decryptedMessage) {
 		if(envelope == null)
 			return;
 		
@@ -217,13 +198,12 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
 			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.FALSE));
 
-			SignalServiceContent decryptedMessage = service.decryptMessage(envelope);
 			String senderNumber = decryptedMessage.getSender().getNumber().get();
 			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	senderNumber);
 			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(decryptedMessage.getTimestamp()));
 
 			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();
-			if(envelope.isReceipt() || receiptMessage.isPresent()) {
+			if(receiptMessage.isPresent()) {
 				attributes.put(ATTRIBUTE_RECEIPT, Boolean.toString(Boolean.TRUE));
 			} else {
 				attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(Boolean.FALSE));

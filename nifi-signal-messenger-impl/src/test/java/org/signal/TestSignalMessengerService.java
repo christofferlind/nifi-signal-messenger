@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 
+import java.lang.Thread.State;
 import java.lang.reflect.InvocationTargetException;
 
 import org.apache.nifi.reporting.InitializationException;
@@ -46,7 +47,7 @@ public class TestSignalMessengerService {
     }
 
     @Test
-    public void enableDisable() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+    public void enableDisable() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InterruptedException {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
@@ -58,9 +59,11 @@ public class TestSignalMessengerService {
         runner.enableControllerService(service);
 
         runner.assertValid(service);
+        
+        Thread.sleep(100);
+        assertEquals(State.TIMED_WAITING, service.receiveMessagesThread.getState());
 
         assertEquals(number, service.getSignalUsername());
-        assertNotNull(service.getMessageReceiver());
         assertNotNull(service.getMessageSender());
         runner.run();
         runner.disableControllerService(service);
