@@ -34,6 +34,7 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
+import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Quote;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Reaction;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
@@ -47,6 +48,11 @@ import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage
 @SeeAlso({PutSignalMessage.class})
 @WritesAttributes({
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIPT, description="Values true or false depending on if the message is a receipt or not"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIPT_DELIVERY, description="Values true or false depending on if the message is a receipt and if the receipt is a delivery or not"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIPT_READ, description="Values true or false depending on if the message is a receipt and if the receipt is a read-message or not"),
+
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_CALL_MESSAGE, description="true if it is a call"),
+	
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE, description="The content of the message sent"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_VIEW_ONCE, description="Values true or false depending on if the message is a view once message"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_TIMESTAMP, description="Time when the message was sent"),
@@ -59,27 +65,36 @@ import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message"),
 
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_QUOTE_ID, description="If the data-message contains a quote, then this attribute will be populated with the id (long)"),
+
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_ID, description="If the data-message is a message to a group, then this attribute will be populated with the base64 encoded group id"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_TITLE, description="If the data-message is a message to a group, then this attribute will be populated with the title of the group"),
 	})
 public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
-	public static final String ATTRIBUTE_RECEIPT = 						"signal.receipt";
-	public  static final String ATTRIBUTE_MESSAGE = 					"signal.message";
-	public  static final String ATTRIBUTE_MESSAGE_VIEW_ONCE = 			"signal.message.viewonce";
-	public  static final String ATTRIBUTE_TIMESTAMP = 					"signal.timestamp";
-	public  static final String ATTRIBUTE_RECEIVING_NUMBER = 			"signal.receiving.number";
-	public  static final String ATTRIBUTE_SENDER_NUMBER = 				"signal.sender.number";
-	public  static final String ATTRIBUTE_SENDER_IDENTIFIED = 			"signal.sender.identified";
+	public static final String ATTRIBUTE_RECEIPT = 								"signal.receipt";
+	public static final String ATTRIBUTE_RECEIPT_DELIVERY = 					"signal.receipt.delivery";
+	public static final String ATTRIBUTE_RECEIPT_READ = 						"signal.receipt.read";
+
+	public static final String ATTRIBUTE_CALL_MESSAGE = 						"signal.call";
+
+	public static final String ATTRIBUTE_MESSAGE = 								"signal.message";
+	public static final String ATTRIBUTE_MESSAGE_VIEW_ONCE = 					"signal.message.viewonce";
+	public static final String ATTRIBUTE_TIMESTAMP = 							"signal.timestamp";
+	public static final String ATTRIBUTE_RECEIVING_NUMBER = 					"signal.receiving.number";
+	public static final String ATTRIBUTE_SENDER_NUMBER = 						"signal.sender.number";
+	public static final String ATTRIBUTE_SENDER_IDENTIFIED = 					"signal.sender.identified";
 
 	public static final String ATTRIBUTE_MESSAGE_REACTION_EMOJI = 				"signal.message.reaction.emoji";
 	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR = 		"signal.message.reaction.target.author";
 	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP = 	"signal.message.reaction.target.timestamp";
 
-	public static final String ATTRIBUTE_MESSAGE_GROUP_ID = 			"signal.message.group.id";
-	public static final String ATTRIBUTE_MESSAGE_GROUP_TITLE = 			"signal.message.group.title";
+	public static final String ATTRIBUTE_MESSAGE_QUOTE_ID = 					"signal.message.quote.id";
+	
+	public static final String ATTRIBUTE_MESSAGE_GROUP_ID = 					"signal.message.group.id";
+	public static final String ATTRIBUTE_MESSAGE_GROUP_TITLE = 					"signal.message.group.title";
 
-	public  static final String ATTRIBUTE_ERROR_MESSAGE = 				"signal.error.message";
+	public  static final String ATTRIBUTE_ERROR_MESSAGE = 						"signal.error.message";
 
 	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
             .Builder().name("SignalService")
@@ -196,41 +211,52 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 		Map<String, String> attributes = new HashMap<>(7);
 		try {
 			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
-			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.FALSE));
+			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
 
 			String senderNumber = decryptedMessage.getSender().getNumber().get();
 			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	senderNumber);
 			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(decryptedMessage.getTimestamp()));
 
+			//Check receipts
 			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();
 			if(receiptMessage.isPresent()) {
-				attributes.put(ATTRIBUTE_RECEIPT, Boolean.toString(Boolean.TRUE));
-			} else {
-				attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(Boolean.FALSE));
+				SignalServiceReceiptMessage msg = receiptMessage.get();
+				attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.TRUE));
+				attributes.put(ATTRIBUTE_RECEIPT_DELIVERY, 	Boolean.toString(msg.isDeliveryReceipt()));
+				attributes.put(ATTRIBUTE_RECEIPT_READ, 		Boolean.toString(msg.isReadReceipt()));
+			}
+			
+			//Check for calls
+			if(decryptedMessage.getCallMessage().isPresent()) {
+				attributes.put(ATTRIBUTE_CALL_MESSAGE, 		Boolean.toString(Boolean.TRUE));
+			}
 
-				Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
-				if(optionalDataMessage.isPresent()) {
-					SignalServiceDataMessage dataMessage = optionalDataMessage.get();
-					attributes.put(ATTRIBUTE_MESSAGE, dataMessage.getBody().or(""));
-					
-					boolean viewOnce = dataMessage.isViewOnce();
-					attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(viewOnce));
-					
-					if(dataMessage.getReaction().isPresent()) {
-						Reaction reaction = dataMessage.getReaction().get();
-						attributes.put(ATTRIBUTE_MESSAGE_REACTION_EMOJI, reaction.getEmoji());
-						attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, reaction.getTargetAuthor().getNumber().get());
-						attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(reaction.getTargetSentTimestamp()));
-					}
-					
-					if(dataMessage.getGroupContext().isPresent()) {
-			            SignalServiceGroupContext groupContext = dataMessage.getGroupContext().get();
-			            String groupId = service.getGroupId(groupContext);
-			            attributes.put(ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
+			//Check data message
+			Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
+			if(optionalDataMessage.isPresent()){
+				SignalServiceDataMessage dataMessage = optionalDataMessage.get();
+				attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(dataMessage.isViewOnce()));
+				attributes.put(ATTRIBUTE_MESSAGE, dataMessage.getBody().or(""));
 
-			            String groupTitle = service.getGroupTitle(groupContext);
-			            attributes.put(ATTRIBUTE_MESSAGE_GROUP_TITLE, groupTitle);
-					}
+				if(dataMessage.getReaction().isPresent()) {
+					Reaction reaction = dataMessage.getReaction().get();
+					attributes.put(ATTRIBUTE_MESSAGE_REACTION_EMOJI, reaction.getEmoji());
+					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, reaction.getTargetAuthor().getNumber().get());
+					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(reaction.getTargetSentTimestamp()));
+				}
+
+				if(dataMessage.getQuote().isPresent()) {
+					Quote quote = dataMessage.getQuote().get();
+					attributes.put(ATTRIBUTE_MESSAGE_QUOTE_ID, Long.toString(quote.getId()));
+				}
+
+				if(dataMessage.getGroupContext().isPresent()) {
+					SignalServiceGroupContext groupContext = dataMessage.getGroupContext().get();
+					String groupId = service.getGroupId(groupContext);
+					attributes.put(ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
+
+					String groupTitle = service.getGroupTitle(groupContext);
+					attributes.put(ATTRIBUTE_MESSAGE_GROUP_TITLE, groupTitle);
 				}
 			}
 
