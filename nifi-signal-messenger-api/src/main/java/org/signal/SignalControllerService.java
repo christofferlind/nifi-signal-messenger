@@ -25,8 +25,6 @@ public interface SignalControllerService extends ControllerService {
 
 	public List<SendMessageResult> sendGroupMessage(List<String> groups, String body, SignalServiceAttachmentStream attachment) throws ProcessException, IOException, InvocationTargetException;
 	
-	public void saveAccount();
-	
 	public void addMessageListener(BiConsumer<SignalServiceEnvelope, SignalServiceContent> listener);
 	
 	public void removeMessageListener(BiConsumer<SignalServiceEnvelope, SignalServiceContent> listener);
@@ -47,8 +45,6 @@ public interface SignalControllerService extends ControllerService {
 	 */
 	public String getGroupTitle(SignalServiceGroupContext groupContext);
 	
-//	public SignalServiceContent decryptMessage(SignalServiceEnvelope envelope) throws InvalidMetadataMessageException, ProtocolInvalidMessageException, ProtocolDuplicateMessageException, ProtocolLegacyMessageException, ProtocolInvalidKeyIdException, InvalidMetadataVersionException, ProtocolInvalidVersionException, ProtocolNoSessionException, ProtocolInvalidKeyException, ProtocolUntrustedIdentityException, SelfSendException, UnsupportedDataMessageException;
-
 	public void sendMessageReaction(String emoji, boolean remove, String targetAuthor, long targetSentTimestamp, List<String> recipients) throws IOException, EncapsulatedExceptions, InvalidNumberException;
 
 }

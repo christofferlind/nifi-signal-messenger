@@ -104,8 +104,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private volatile String number = null;
 
-	private Method methodDecrypt;
-
 	private Cache<Integer, AuthCredentialResponse> cacheGroupAuthorization = null;
 
 	//Package visibility for testing
@@ -155,9 +153,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 			
 			//Test
 			getMessageSender();
-
-			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
-			methodDecrypt.setAccessible(true);
 
 			cacheGroupAuthorization = CacheBuilder.newBuilder()
 				      .expireAfterAccess(5, TimeUnit.DAYS)
@@ -333,20 +328,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 		return this.number;
 	}
 
-	public void saveAccount() {
-		account.save();
-	}
-	
 	private boolean isServiceEnabled() {
 		return number != null;
-	}
-
-	public SignalServiceContent decryptMessage(SignalServiceEnvelope envelope) throws IllegalStateException {
-		try {
-			return (SignalServiceContent) methodDecrypt.invoke(manager, envelope);
-		} catch (Exception e) {
-			throw new IllegalStateException(e.getMessage(), e);
-		}
 	}
 
 	public List<SendMessageResult> sendGroupMessage(List<String> groups, String body, SignalServiceAttachmentStream attachment)  throws ProcessException, IOException, InvocationTargetException {
