@@ -30,6 +30,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.asamk.signal.manager.Manager;
 import org.asamk.signal.manager.Manager.ReceiveMessageHandler;
+import org.asamk.signal.manager.NotRegisteredException;
 import org.asamk.signal.manager.ServiceConfig;
 import org.asamk.signal.manager.groups.GroupId;
 import org.asamk.signal.manager.groups.GroupIdFormatException;
@@ -151,10 +152,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 			account = getField(manager, "account");
 			accountManager = getField(manager, "accountManager");
-
-			if(!manager.isRegistered()) {
-				throw new InitializationException("Signal manager still not registered");
-			}
 			
 			//Test
 			getMessageSender();
@@ -186,6 +183,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 		} catch (InvocationTargetException e) {
 			throw new InitializationException(e.getMessage(), e);
 		} catch (NoSuchFieldException e) {
+			throw new InitializationException(e.getMessage(), e);
+		} catch (NotRegisteredException e) {
 			throw new InitializationException(e.getMessage(), e);
 		}
 	}
