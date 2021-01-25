@@ -102,7 +102,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private SignalServiceAccountManager accountManager = null;
 
-	private String number;
+	private volatile String number = null;
 
 	private Method methodDecrypt;
 
@@ -159,8 +159,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 			methodDecrypt = Manager.class.getDeclaredMethod("decryptMessage", SignalServiceEnvelope.class);
 			methodDecrypt.setAccessible(true);
 
-			initMessageReceiver();
-			
 			cacheGroupAuthorization = CacheBuilder.newBuilder()
 				      .expireAfterAccess(5, TimeUnit.DAYS)
 				      .initialCapacity(10)
@@ -170,6 +168,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 			updateGroupAuthorizationCache();
 
 			this.number = number;
+
+			initMessageReceiver();
 		} catch (IOException e) {
 			throw new InitializationException(e.getMessage(), e);
 		} catch (NoSuchMethodException e) {
@@ -198,6 +198,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 				ReceiveMessageHandler handler = SignalMessengerService.this::handleMessage;
 				
 				while(!Thread.currentThread().isInterrupted()) {
+					//If the service is not enabled, return
+					if(!isServiceEnabled())
+						return;
+					
 					this.manager.receiveMessages(
 							15, 
 							TimeUnit.SECONDS, 
@@ -297,6 +301,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	@OnDisabled
 	public void onDisable() {
+		number = null;
+		
 		if(receiveMessagesThread != null) {
 			try {
 				receiveMessagesThread.interrupt();
@@ -329,6 +335,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	public void saveAccount() {
 		account.save();
+	}
+	
+	private boolean isServiceEnabled() {
+		return number != null;
 	}
 
 	public SignalServiceContent decryptMessage(SignalServiceEnvelope envelope) throws IllegalStateException {
