@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
@@ -31,6 +32,7 @@ import org.apache.nifi.processor.ProcessSessionFactory;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.whispersystems.libsignal.IdentityKey;
 import org.whispersystems.libsignal.util.guava.Optional;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
@@ -39,6 +41,7 @@ import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Re
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
 import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
+import org.whispersystems.signalservice.api.messages.multidevice.VerifiedMessage.VerifiedState;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
 @CapabilityDescription("Consumes signal messages. "
@@ -58,7 +61,8 @@ import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_TIMESTAMP, description="Time when the message was sent"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message (this is the same as the one in the controller used)"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_IDENTIFIED, description="If the number is verified"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_VERIFIED, description="If the sender number is verified. One of: DEFAULT (trusted but not yet verified), VERIFIED (trusted and verified), UNVERIFIED (untrusted)"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_IDENTIFIED, description="If the sender number is identified"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute"),
 
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
@@ -83,6 +87,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 	public static final String ATTRIBUTE_TIMESTAMP = 							"signal.timestamp";
 	public static final String ATTRIBUTE_RECEIVING_NUMBER = 					"signal.receiving.number";
 	public static final String ATTRIBUTE_SENDER_NUMBER = 						"signal.sender.number";
+	public static final String ATTRIBUTE_SENDER_VERIFIED = 						"signal.sender.verified";
 	public static final String ATTRIBUTE_SENDER_IDENTIFIED = 					"signal.sender.identified";
 
 	public static final String ATTRIBUTE_MESSAGE_REACTION_EMOJI = 				"signal.message.reaction.emoji";
@@ -112,6 +117,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .defaultValue(Boolean.toString(Boolean.TRUE))
             .build();
 
+	public static final PropertyDescriptor IGNORE_UNVERIFIED_SENDER = new PropertyDescriptor
+            .Builder().name("IgnoreUnverifiedSender")
+            .displayName("Ignore unverified sender")
+            .description("If set to to true then only messages sent by a trusted and verified sender identity (at least one) is transfered to success relationship.")
+            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
+            .defaultValue(Boolean.toString(Boolean.FALSE))
+            .build();
+
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
             .description("Successful send")
@@ -131,13 +144,16 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
 
 	private volatile BiConsumer<SignalServiceEnvelope, SignalServiceContent> messageListener = null;
+	
 	private boolean ignoreReceipts;
+	private boolean ignoreUnverifiedSenders;
 
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
         descriptors.add(SIGNAL_SERVICE);
         descriptors.add(IGNORE_RECEIPT_MESSAGE);
+        descriptors.add(IGNORE_UNVERIFIED_SENDER);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -160,6 +176,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     public void onScheduled(ProcessContext context) throws ProcessException {
     	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
     	ignoreReceipts = context.getProperty(IGNORE_RECEIPT_MESSAGE).asBoolean();
+    	ignoreUnverifiedSenders = context.getProperty(IGNORE_UNVERIFIED_SENDER).asBoolean();
     }
     
     private void onError(Throwable e) {
@@ -174,7 +191,6 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     	}
     	
     	messageListener = null;
-    	
     }
 
 	@Override
@@ -182,14 +198,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     	sessionFactoryReference.compareAndSet(null, sessionFactory);
     	
     	if(messageListener == null) {
-	    	messageListener = (env, msg) -> handleEnvelope(service, ignoreReceipts, env, msg);
+	    	messageListener = this::handleEnvelope;
 	    	service.addMessageListener(messageListener);
     	}
         
         context.yield();
 	}
 
-	private void handleEnvelope(SignalControllerService service, boolean ignoreReceipts, SignalServiceEnvelope envelope, SignalServiceContent decryptedMessage) {
+	private void handleEnvelope(SignalServiceEnvelope envelope, SignalServiceContent decryptedMessage) {
 		if(envelope == null)
 			return;
 		
@@ -204,17 +220,48 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			return;
 		}
 
+		String senderNumber = decryptedMessage.getSender().getNumber().get();
+		
+		//Check the verified state of the sender identities
+		String verifiedValue = "";
+		try {
+			Map<IdentityKey, VerifiedState> senderNumberVerifiedStates = service.getIdentityState(senderNumber);
+			if(senderNumberVerifiedStates != null && senderNumberVerifiedStates.size() > 0) {
+				verifiedValue = senderNumberVerifiedStates.values().stream().map(Enum::toString).collect(Collectors.joining(", "));
+			}
+			
+			if(ignoreUnverifiedSenders) {
+				boolean isVerified = false;
+				
+				if(senderNumberVerifiedStates != null) {
+					isVerified = senderNumberVerifiedStates
+							.values()
+							.stream()
+							.filter(s -> VerifiedState.VERIFIED.equals(s))
+							.findAny()
+							.isPresent();
+				}
+				
+				if(!isVerified) {
+					if(getLogger().isWarnEnabled()) getLogger().warn("Sender identity is not verified, ignoring...");
+					return;
+				}
+			}
+		} catch (Throwable e1) {
+			getLogger().error(e1.getMessage(), e1);
+		}
+
 		if(getLogger().isDebugEnabled()) getLogger().debug("Received message");
 
 		ProcessSession session = sessionFactory.createSession();
 		
-		Map<String, String> attributes = new HashMap<>(7);
+		Map<String, String> attributes = new HashMap<>(20);
 		try {
 			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
 			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
 
-			String senderNumber = decryptedMessage.getSender().getNumber().get();
 			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	senderNumber);
+			attributes.put(ATTRIBUTE_SENDER_VERIFIED, 	verifiedValue);
 			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(decryptedMessage.getTimestamp()));
 
 			//Check receipts

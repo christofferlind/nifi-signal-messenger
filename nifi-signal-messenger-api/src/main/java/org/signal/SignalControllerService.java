@@ -3,17 +3,20 @@ package org.signal;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiConsumer;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.controller.ControllerService;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.whispersystems.libsignal.IdentityKey;
 import org.whispersystems.signalservice.api.messages.SendMessageResult;
 import org.whispersystems.signalservice.api.messages.SignalServiceAttachmentStream;
 import org.whispersystems.signalservice.api.messages.SignalServiceContent;
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
+import org.whispersystems.signalservice.api.messages.multidevice.VerifiedMessage.VerifiedState;
 import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
 import org.whispersystems.signalservice.api.util.InvalidNumberException;
 
@@ -30,6 +33,8 @@ public interface SignalControllerService extends ControllerService {
 	public void removeMessageListener(BiConsumer<SignalServiceEnvelope, SignalServiceContent> listener);
 
 	public String getSignalUsername();
+	
+	public Map<IdentityKey, VerifiedState> getIdentityState(String number) throws InvalidNumberException;
 
 	/**
 	 * Helper method that returns the base64 encoded id of the group

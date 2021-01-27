@@ -38,11 +38,13 @@ import org.asamk.signal.manager.groups.GroupIdV2;
 import org.asamk.signal.manager.groups.GroupUtils;
 import org.asamk.signal.manager.storage.SignalAccount;
 import org.asamk.signal.manager.storage.groups.GroupInfo;
+import org.asamk.signal.manager.storage.protocol.IdentityInfo;
 import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.signal.storageservice.protos.groups.local.DecryptedGroup;
 import org.signal.zkgroup.auth.AuthCredentialResponse;
 import org.signal.zkgroup.groups.GroupSecretParams;
+import org.whispersystems.libsignal.IdentityKey;
 import org.whispersystems.libsignal.util.Pair;
 import org.whispersystems.signalservice.api.SignalServiceAccountManager;
 import org.whispersystems.signalservice.api.SignalServiceMessageSender;
@@ -58,6 +60,7 @@ import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroup;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupV2;
+import org.whispersystems.signalservice.api.messages.multidevice.VerifiedMessage.VerifiedState;
 import org.whispersystems.signalservice.api.push.SignalServiceAddress;
 import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
 import org.whispersystems.signalservice.api.util.InvalidNumberException;
@@ -577,5 +580,19 @@ public class SignalMessengerService extends AbstractControllerService implements
 	
 	public void onError(Throwable e) {
 		getLogger().error(e.getMessage(), e);
+	}
+
+	@Override
+	public Map<IdentityKey, VerifiedState> getIdentityState(String number) throws InvalidNumberException {
+		List<IdentityInfo> identities = manager.getIdentities(number);
+		if(identities == null || identities.isEmpty())
+			return Collections.emptyMap();
+		
+		Map<IdentityKey, VerifiedState> result = new LinkedHashMap<>(identities.size());
+		for (IdentityInfo identityInfo : identities) {
+			result.put(identityInfo.getIdentityKey(), identityInfo.getTrustLevel().toVerifiedState());
+		}
+		
+		return result;
 	}
 }
