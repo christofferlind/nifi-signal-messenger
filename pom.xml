@@ -23,7 +23,7 @@
     </parent>
     
     <properties>
-    	<nifi.signal.messenger.version>1.4</nifi.signal.messenger.version>
+    	<nifi.signal.messenger.version>1.5</nifi.signal.messenger.version>
     	<nifi.version>1.11.3</nifi.version>
     	<signal.service.version>2.15.3_unofficial_16</signal.service.version>
     	<signal.cli.version>0.7.4</signal.cli.version>
@@ -34,7 +34,7 @@
     <packaging>pom</packaging>
 
 <!--     <version>${nifi.signal.messenger.version}</version> -->
-	<version>1.4</version>
+	<version>1.5</version>
 
     <modules>
         <module>nifi-signal-messenger-api</module>
