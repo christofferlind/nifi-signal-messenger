@@ -68,7 +68,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	String message = "Testing: " + Double.toString(Math.random());
     	serviceB.sendMessage(Arrays.asList(numberA), message, null);
     	
-    	runner.setRunSchedule(500);
+    	runner.setRunSchedule(250);
     	runner.run(10);
     	
     	runner.assertTransferCount(ConsumeSignalMessage.FAILURE, 0);
@@ -78,6 +78,26 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	MockFlowFile flowFile = flowFiles.get(0);
     	assertEquals(message, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE));
     	assertEquals(numberB, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER));
+    }
+    
+    @Test
+    @Ignore("Used for manual testing")
+    public void consumeMessageManual() throws ProcessException, InvocationTargetException, IOException, InterruptedException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+
+    	runner.clearTransferState();
+    	
+    	runner.setRunSchedule(2_000);
+    	runner.run(10);
+    	
+    	runner.assertTransferCount(ConsumeSignalMessage.FAILURE, 0);
+
+    	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
+    	assertEquals(1, flowFiles.size());
     }
 
     @Test

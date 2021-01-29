@@ -20,7 +20,7 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
-import org.apache.nifi.annotation.lifecycle.OnUnscheduled;
+import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
@@ -41,6 +41,8 @@ import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Re
 import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
 import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
+import org.whispersystems.signalservice.api.messages.SignalServiceTypingMessage;
+import org.whispersystems.signalservice.api.messages.multidevice.SignalServiceSyncMessage;
 import org.whispersystems.signalservice.api.messages.multidevice.VerifiedMessage.VerifiedState;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
@@ -65,6 +67,9 @@ import org.whispersystems.signalservice.api.messages.multidevice.VerifiedMessage
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_IDENTIFIED, description="If the sender number is identified"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute"),
 
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_TYPING_STARTED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
+	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_TYPING_STOPPED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
+	
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
 	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message"),
@@ -90,6 +95,9 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 	public static final String ATTRIBUTE_SENDER_VERIFIED = 						"signal.sender.verified";
 	public static final String ATTRIBUTE_SENDER_IDENTIFIED = 					"signal.sender.identified";
 
+	public static final String ATTRIBUTE_SENDER_TYPING_STARTED = 				"signal.sender.typing.started";
+	public static final String ATTRIBUTE_SENDER_TYPING_STOPPED = 				"signal.sender.typing.stopped";
+	
 	public static final String ATTRIBUTE_MESSAGE_REACTION_EMOJI = 				"signal.message.reaction.emoji";
 	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR = 		"signal.message.reaction.target.author";
 	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP = 	"signal.message.reaction.target.timestamp";
@@ -113,6 +121,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .Builder().name("ReceiptMessages")
             .displayName("Ignore receipts")
             .description("Don't transfer any receipt messages")
+            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
+            .defaultValue(Boolean.toString(Boolean.TRUE))
+            .build();
+
+	public static final PropertyDescriptor IGNORE_TYPING_MESSAGE = new PropertyDescriptor
+            .Builder().name("TypingMessages")
+            .displayName("Ignore typing messages")
+            .description("Don't transfer any typing messages")
             .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
             .defaultValue(Boolean.toString(Boolean.TRUE))
             .build();
@@ -146,6 +162,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 	private volatile BiConsumer<SignalServiceEnvelope, SignalServiceContent> messageListener = null;
 	
 	private boolean ignoreReceipts;
+	private boolean ignoreTyping;
 	private boolean ignoreUnverifiedSenders;
 
     @Override
@@ -153,6 +170,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
         descriptors.add(SIGNAL_SERVICE);
         descriptors.add(IGNORE_RECEIPT_MESSAGE);
+        descriptors.add(IGNORE_TYPING_MESSAGE);
         descriptors.add(IGNORE_UNVERIFIED_SENDER);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
@@ -176,6 +194,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     public void onScheduled(ProcessContext context) throws ProcessException {
     	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
     	ignoreReceipts = context.getProperty(IGNORE_RECEIPT_MESSAGE).asBoolean();
+    	ignoreTyping = context.getProperty(IGNORE_TYPING_MESSAGE).asBoolean();
     	ignoreUnverifiedSenders = context.getProperty(IGNORE_UNVERIFIED_SENDER).asBoolean();
     }
     
@@ -184,7 +203,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     	logger.error(e.getMessage(), e);
     }
     
-    @OnUnscheduled
+    @OnStopped
     public void unschedule() {
     	if(messageListener != null && service != null) {
     		service.removeMessageListener(messageListener);
@@ -214,13 +233,28 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			getLogger().warn("Message received, but no ProcessSessionFactory is set so we cant handle the signal message");
 			return;
 		}
-		
-		if(envelope.isReceipt() && ignoreReceipts) {
+
+		String senderNumber = decryptedMessage.getSender().getNumber().get();
+
+		//Check for receipt messages
+		Optional<SignalServiceReceiptMessage> opReceiptMessage = decryptedMessage.getReceiptMessage();
+		if((envelope.isReceipt() || opReceiptMessage.isPresent()) && ignoreReceipts) {
 			if(getLogger().isDebugEnabled()) getLogger().debug("Message is a receipt, but it should be ignored");
 			return;
 		}
 
-		String senderNumber = decryptedMessage.getSender().getNumber().get();
+		//Check for typing messages
+		Optional<SignalServiceTypingMessage> opTypingMessage = decryptedMessage.getTypingMessage();
+		if(opTypingMessage.isPresent() && ignoreTyping) {
+			if(getLogger().isDebugEnabled()) getLogger().debug("Received typing message, but it should be ignored");
+			return;
+		}
+		
+		Optional<SignalServiceSyncMessage> opSyncMessage = decryptedMessage.getSyncMessage();
+		if(opSyncMessage.isPresent()) {
+			//Don't process sync messages, this is done by the manager
+			return;
+		}
 		
 		//Check the verified state of the sender identities
 		String verifiedValue = "";
@@ -263,6 +297,12 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	senderNumber);
 			attributes.put(ATTRIBUTE_SENDER_VERIFIED, 	verifiedValue);
 			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(decryptedMessage.getTimestamp()));
+			
+			if(opTypingMessage.isPresent()) {
+				SignalServiceTypingMessage typingMessage = opTypingMessage.get();
+				attributes.put(ATTRIBUTE_SENDER_TYPING_STARTED, 	Boolean.toString(typingMessage.isTypingStarted()));
+				attributes.put(ATTRIBUTE_SENDER_TYPING_STOPPED, 	Boolean.toString(typingMessage.isTypingStopped()));
+			}
 
 			//Check receipts
 			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();

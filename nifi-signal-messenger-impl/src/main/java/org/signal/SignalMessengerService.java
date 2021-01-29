@@ -191,19 +191,21 @@ public class SignalMessengerService extends AbstractControllerService implements
 		if(getLogger().isDebugEnabled()) getLogger().debug("Starting receive message thread");
 		messageQueue = EvictingQueue.create(1_000);
 		
+		ReceiveMessageHandler handler = SignalMessengerService.this::handleMessage;
+		
 		receiveMessagesThread = new Thread(() -> {
 			try {
-				ReceiveMessageHandler handler = SignalMessengerService.this::handleMessage;
-				
 				while(!Thread.currentThread().isInterrupted()) {
 					//If the service is not enabled, return
 					if(!isServiceEnabled())
 						return;
+
+					if(getLogger().isDebugEnabled()) getLogger().debug("Listening for messages: " + this.number);
 					
 					this.manager.receiveMessages(
 							15, 
 							TimeUnit.SECONDS, 
-							true, 
+							false, 
 							false, 
 							handler);
 				}
@@ -215,8 +217,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 				onError(e);
 			} catch (Throwable e) {
 				onError(e);
+			} finally {
+				if(getLogger().isDebugEnabled()) getLogger().debug("Stopped listening for messages: " + this.number);
 			}
-		});
+		}, "SignalMsgRec." + this.number);
 		
 		receiveMessagesThread.start();
 	}
