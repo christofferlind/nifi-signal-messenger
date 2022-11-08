@@ -1,8 +1,6 @@
 package org.signal;
 
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -27,8 +25,8 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
-import org.whispersystems.signalservice.api.util.InvalidNumberException;
+//import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
+//import org.whispersystems.signalservice.api.util.InvalidNumberException;
 
 @Tags({ "Signal", "Put", "Message", "Send", "Reaction" })
 @CapabilityDescription("Sends a reaction on Signal message. This reads the attributes that ConsumeSignalMessage produces.")
@@ -142,35 +140,35 @@ public class PutSignalReaction extends AbstractProcessor {
 			return;
 		}
 
-		try {
-			targetTimestampString = targetTimestampString.trim();
-			long targetTimestamp = Long.decode(targetTimestampString);
-			
-			SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-			String emoji = context.getProperty(REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
-			emoji = fixEmojiString(emoji);
-
-			boolean removeReaction = emoji.isEmpty();
-			
-			signalService.sendMessageReaction(emoji, removeReaction, targetAuthor, targetTimestamp, Arrays.asList(targetAuthor));
-			
-			session.transfer(flowFile, SUCCESS);
-		} catch (NumberFormatException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (IllegalArgumentException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (IOException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (EncapsulatedExceptions e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (InvalidNumberException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		}
+//		try {
+//			targetTimestampString = targetTimestampString.trim();
+//			long targetTimestamp = Long.decode(targetTimestampString);
+//			
+//			SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
+//			String emoji = context.getProperty(REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
+//			emoji = fixEmojiString(emoji);
+//
+//			boolean removeReaction = emoji.isEmpty();
+//			
+//			signalService.sendMessageReaction(emoji, removeReaction, targetAuthor, targetTimestamp, Arrays.asList(targetAuthor));
+//			
+//			session.transfer(flowFile, SUCCESS);
+//		} catch (NumberFormatException e) {
+//			getLogger().error(e.getMessage(), e);
+//			session.transfer(flowFile, FAILURE);
+//		} catch (IllegalArgumentException e) {
+//			getLogger().error(e.getMessage(), e);
+//			session.transfer(flowFile, FAILURE);
+//		} catch (IOException e) {
+//			getLogger().error(e.getMessage(), e);
+//			session.transfer(flowFile, FAILURE);
+//		} catch (EncapsulatedExceptions e) {
+//			getLogger().error(e.getMessage(), e);
+//			session.transfer(flowFile, FAILURE);
+//		} catch (InvalidNumberException e) {
+//			getLogger().error(e.getMessage(), e);
+//			session.transfer(flowFile, FAILURE);
+//		}
 	}
 
 	private String fixEmojiString(String emoji) {

@@ -19,7 +19,7 @@
     <parent>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-signal-messenger</artifactId>
-        <version>1.5</version>
+        <version>2.0</version>
     </parent>
 
     <artifactId>nifi-signal-messenger-processors</artifactId>
@@ -40,11 +40,6 @@
             <artifactId>nifi-signal-messenger-api</artifactId>
             <version>${nifi.signal.messenger.version}</version>
         </dependency>
-		<dependency>
-			<groupId>com.github.turasa</groupId>
-			<artifactId>signal-service-java</artifactId>
-			<version>${signal.service.version}</version>
-		</dependency>
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-mock</artifactId>

@@ -44,7 +44,6 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
         setSignaleService(runner);
         runner.setProperty(PutSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
         runner.enableControllerService(serviceA);
-        runner.enableControllerService(serviceB);
     }
 
 	@After
@@ -54,10 +53,6 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	
     	if(runner.isControllerServiceEnabled(serviceA)) {
     		runner.disableControllerService(serviceA);
-    	}
-    	
-    	if(runner.isControllerServiceEnabled(serviceB)) {
-    		runner.disableControllerService(serviceB);
     	}
     }
 
@@ -72,6 +67,7 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	runner.clearTransferState();
     	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB);
     	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, "Testing " + PutSignalMessage.class.getSimpleName());
+    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
     	runner.enqueue(new byte[0]);
     	runner.run();
     	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);

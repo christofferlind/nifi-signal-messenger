@@ -8,8 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
+import java.util.function.Consumer;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
@@ -32,18 +31,7 @@ import org.apache.nifi.processor.ProcessSessionFactory;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.whispersystems.libsignal.IdentityKey;
-import org.whispersystems.libsignal.util.guava.Optional;
-import org.whispersystems.signalservice.api.messages.SignalServiceContent;
-import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage;
-import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Quote;
-import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage.Reaction;
-import org.whispersystems.signalservice.api.messages.SignalServiceEnvelope;
-import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
-import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
-import org.whispersystems.signalservice.api.messages.SignalServiceTypingMessage;
-import org.whispersystems.signalservice.api.messages.multidevice.SignalServiceSyncMessage;
-import org.whispersystems.signalservice.api.messages.multidevice.VerifiedMessage.VerifiedState;
+import org.signal.model.SignalMessage;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
 @CapabilityDescription("Consumes signal messages. "
@@ -159,11 +147,10 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
     private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
 
-	private volatile BiConsumer<SignalServiceEnvelope, SignalServiceContent> messageListener = null;
-	
 	private boolean ignoreReceipts;
 	private boolean ignoreTyping;
 	private boolean ignoreUnverifiedSenders;
+	private volatile Consumer<SignalMessage> messageListener;
 
     @Override
     protected void init(final ProcessorInitializationContext context) {
@@ -217,135 +204,79 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     	sessionFactoryReference.compareAndSet(null, sessionFactory);
     	
     	if(messageListener == null) {
-	    	messageListener = this::handleEnvelope;
+	    	messageListener = this::handleMessage;
 	    	service.addMessageListener(messageListener);
     	}
         
         context.yield();
 	}
-
-	private void handleEnvelope(SignalServiceEnvelope envelope, SignalServiceContent decryptedMessage) {
-		if(envelope == null)
-			return;
-		
+	
+	private void handleMessage(SignalMessage message) {
 		ProcessSessionFactory sessionFactory = sessionFactoryReference.get();
 		if(sessionFactory == null) {
 			getLogger().warn("Message received, but no ProcessSessionFactory is set so we cant handle the signal message");
 			return;
 		}
-
-		String senderNumber = decryptedMessage.getSender().getNumber().get();
-
-		//Check for receipt messages
-		Optional<SignalServiceReceiptMessage> opReceiptMessage = decryptedMessage.getReceiptMessage();
-		if((envelope.isReceipt() || opReceiptMessage.isPresent()) && ignoreReceipts) {
-			if(getLogger().isDebugEnabled()) getLogger().debug("Message is a receipt, but it should be ignored");
-			return;
-		}
-
-		//Check for typing messages
-		Optional<SignalServiceTypingMessage> opTypingMessage = decryptedMessage.getTypingMessage();
-		if(opTypingMessage.isPresent() && ignoreTyping) {
-			if(getLogger().isDebugEnabled()) getLogger().debug("Received typing message, but it should be ignored");
-			return;
-		}
 		
-		Optional<SignalServiceSyncMessage> opSyncMessage = decryptedMessage.getSyncMessage();
-		if(opSyncMessage.isPresent()) {
-			//Don't process sync messages, this is done by the manager
-			return;
-		}
-		
-		//Check the verified state of the sender identities
-		String verifiedValue = "";
-		try {
-			Map<IdentityKey, VerifiedState> senderNumberVerifiedStates = service.getIdentityState(senderNumber);
-			if(senderNumberVerifiedStates != null && senderNumberVerifiedStates.size() > 0) {
-				verifiedValue = senderNumberVerifiedStates.values().stream().map(Enum::toString).collect(Collectors.joining(", "));
-			}
-			
-			if(ignoreUnverifiedSenders) {
-				boolean isVerified = false;
-				
-				if(senderNumberVerifiedStates != null) {
-					isVerified = senderNumberVerifiedStates
-							.values()
-							.stream()
-							.filter(s -> VerifiedState.VERIFIED.equals(s))
-							.findAny()
-							.isPresent();
-				}
-				
-				if(!isVerified) {
-					if(getLogger().isWarnEnabled()) getLogger().warn("Sender identity is not verified, ignoring...");
-					return;
-				}
-			}
-		} catch (Throwable e1) {
-			getLogger().error(e1.getMessage(), e1);
-		}
-
-		if(getLogger().isDebugEnabled()) getLogger().debug("Received message");
-
 		ProcessSession session = sessionFactory.createSession();
-		
 		Map<String, String> attributes = new HashMap<>(20);
 		try {
-			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
-			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
+//			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
+//			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
 
-			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	senderNumber);
-			attributes.put(ATTRIBUTE_SENDER_VERIFIED, 	verifiedValue);
-			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(decryptedMessage.getTimestamp()));
+			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	message.getSource());
+//			attributes.put(ATTRIBUTE_SENDER_VERIFIED, 	verifiedValue);
+			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(message.getTimestamp()));
 			
-			if(opTypingMessage.isPresent()) {
-				SignalServiceTypingMessage typingMessage = opTypingMessage.get();
-				attributes.put(ATTRIBUTE_SENDER_TYPING_STARTED, 	Boolean.toString(typingMessage.isTypingStarted()));
-				attributes.put(ATTRIBUTE_SENDER_TYPING_STOPPED, 	Boolean.toString(typingMessage.isTypingStopped()));
-			}
+//			if(opTypingMessage.isPresent()) {
+//				SignalServiceTypingMessage typingMessage = opTypingMessage.get();
+//				attributes.put(ATTRIBUTE_SENDER_TYPING_STARTED, 	Boolean.toString(typingMessage.isTypingStarted()));
+//				attributes.put(ATTRIBUTE_SENDER_TYPING_STOPPED, 	Boolean.toString(typingMessage.isTypingStopped()));
+//			}
 
-			//Check receipts
-			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();
-			if(receiptMessage.isPresent()) {
-				SignalServiceReceiptMessage msg = receiptMessage.get();
-				attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.TRUE));
-				attributes.put(ATTRIBUTE_RECEIPT_DELIVERY, 	Boolean.toString(msg.isDeliveryReceipt()));
-				attributes.put(ATTRIBUTE_RECEIPT_READ, 		Boolean.toString(msg.isReadReceipt()));
-			}
+//			//Check receipts
+//			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();
+//			if(receiptMessage.isPresent()) {
+//				SignalServiceReceiptMessage msg = receiptMessage.get();
+//				attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.TRUE));
+//				attributes.put(ATTRIBUTE_RECEIPT_DELIVERY, 	Boolean.toString(msg.isDeliveryReceipt()));
+//				attributes.put(ATTRIBUTE_RECEIPT_READ, 		Boolean.toString(msg.isReadReceipt()));
+//			}
 			
-			//Check for calls
-			if(decryptedMessage.getCallMessage().isPresent()) {
-				attributes.put(ATTRIBUTE_CALL_MESSAGE, 		Boolean.toString(Boolean.TRUE));
-			}
+//			//Check for calls
+//			if(decryptedMessage.getCallMessage().isPresent()) {
+//				attributes.put(ATTRIBUTE_CALL_MESSAGE, 		Boolean.toString(Boolean.TRUE));
+//			}
 
 			//Check data message
-			Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
-			if(optionalDataMessage.isPresent()){
-				SignalServiceDataMessage dataMessage = optionalDataMessage.get();
-				attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(dataMessage.isViewOnce()));
-				attributes.put(ATTRIBUTE_MESSAGE, dataMessage.getBody().or(""));
-
-				if(dataMessage.getReaction().isPresent()) {
-					Reaction reaction = dataMessage.getReaction().get();
-					attributes.put(ATTRIBUTE_MESSAGE_REACTION_EMOJI, reaction.getEmoji());
-					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, reaction.getTargetAuthor().getNumber().get());
-					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(reaction.getTargetSentTimestamp()));
-				}
-
-				if(dataMessage.getQuote().isPresent()) {
-					Quote quote = dataMessage.getQuote().get();
-					attributes.put(ATTRIBUTE_MESSAGE_QUOTE_ID, Long.toString(quote.getId()));
-				}
-
-				if(dataMessage.getGroupContext().isPresent()) {
-					SignalServiceGroupContext groupContext = dataMessage.getGroupContext().get();
-					String groupId = service.getGroupId(groupContext);
-					attributes.put(ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
-
-					String groupTitle = service.getGroupTitle(groupContext);
-					attributes.put(ATTRIBUTE_MESSAGE_GROUP_TITLE, groupTitle);
-				}
-			}
+			attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(message.isViewOnce()));
+			attributes.put(ATTRIBUTE_MESSAGE, message.getMessage());
+			
+//			Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
+//			if(optionalDataMessage.isPresent()){
+//				SignalServiceDataMessage dataMessage = optionalDataMessage.get();
+//
+//				if(dataMessage.getReaction().isPresent()) {
+//					Reaction reaction = dataMessage.getReaction().get();
+//					attributes.put(ATTRIBUTE_MESSAGE_REACTION_EMOJI, reaction.getEmoji());
+//					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, reaction.getTargetAuthor().getNumber().get());
+//					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(reaction.getTargetSentTimestamp()));
+//				}
+//
+//				if(dataMessage.getQuote().isPresent()) {
+//					Quote quote = dataMessage.getQuote().get();
+//					attributes.put(ATTRIBUTE_MESSAGE_QUOTE_ID, Long.toString(quote.getId()));
+//				}
+//
+//				if(dataMessage.getGroupContext().isPresent()) {
+//					SignalServiceGroupContext groupContext = dataMessage.getGroupContext().get();
+//					String groupId = service.getGroupId(groupContext);
+//					attributes.put(ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
+//
+//					String groupTitle = service.getGroupTitle(groupContext);
+//					attributes.put(ATTRIBUTE_MESSAGE_GROUP_TITLE, groupTitle);
+//				}
+//			}
 
 			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(ATTRIBUTE_SENDER_NUMBER));
 
@@ -363,4 +294,144 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 		}
 		session.commit();
 	}
+
+//	private void handleEnvelope(SignalServiceEnvelope envelope, SignalServiceContent decryptedMessage) {
+//		if(envelope == null)
+//			return;
+//		
+//		ProcessSessionFactory sessionFactory = sessionFactoryReference.get();
+//		if(sessionFactory == null) {
+//			getLogger().warn("Message received, but no ProcessSessionFactory is set so we cant handle the signal message");
+//			return;
+//		}
+//
+//		String senderNumber = decryptedMessage.getSender().getNumber().get();
+//
+//		//Check for receipt messages
+//		Optional<SignalServiceReceiptMessage> opReceiptMessage = decryptedMessage.getReceiptMessage();
+//		if((envelope.isReceipt() || opReceiptMessage.isPresent()) && ignoreReceipts) {
+//			if(getLogger().isDebugEnabled()) getLogger().debug("Message is a receipt, but it should be ignored");
+//			return;
+//		}
+//
+//		//Check for typing messages
+//		Optional<SignalServiceTypingMessage> opTypingMessage = decryptedMessage.getTypingMessage();
+//		if(opTypingMessage.isPresent() && ignoreTyping) {
+//			if(getLogger().isDebugEnabled()) getLogger().debug("Received typing message, but it should be ignored");
+//			return;
+//		}
+//		
+//		Optional<SignalServiceSyncMessage> opSyncMessage = decryptedMessage.getSyncMessage();
+//		if(opSyncMessage.isPresent()) {
+//			//Don't process sync messages, this is done by the manager
+//			return;
+//		}
+//		
+//		//Check the verified state of the sender identities
+//		String verifiedValue = "";
+//		try {
+//			Map<IdentityKey, VerifiedState> senderNumberVerifiedStates = service.getIdentityState(senderNumber);
+//			if(senderNumberVerifiedStates != null && senderNumberVerifiedStates.size() > 0) {
+//				verifiedValue = senderNumberVerifiedStates.values().stream().map(Enum::toString).collect(Collectors.joining(", "));
+//			}
+//			
+//			if(ignoreUnverifiedSenders) {
+//				boolean isVerified = false;
+//				
+//				if(senderNumberVerifiedStates != null) {
+//					isVerified = senderNumberVerifiedStates
+//							.values()
+//							.stream()
+//							.filter(s -> VerifiedState.VERIFIED.equals(s))
+//							.findAny()
+//							.isPresent();
+//				}
+//				
+//				if(!isVerified) {
+//					if(getLogger().isWarnEnabled()) getLogger().warn("Sender identity is not verified, ignoring...");
+//					return;
+//				}
+//			}
+//		} catch (Throwable e1) {
+//			getLogger().error(e1.getMessage(), e1);
+//		}
+//
+//		if(getLogger().isDebugEnabled()) getLogger().debug("Received message");
+//
+//		ProcessSession session = sessionFactory.createSession();
+//		
+//		Map<String, String> attributes = new HashMap<>(20);
+//		try {
+//			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
+//			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
+//
+//			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	senderNumber);
+//			attributes.put(ATTRIBUTE_SENDER_VERIFIED, 	verifiedValue);
+//			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(decryptedMessage.getTimestamp()));
+//			
+//			if(opTypingMessage.isPresent()) {
+//				SignalServiceTypingMessage typingMessage = opTypingMessage.get();
+//				attributes.put(ATTRIBUTE_SENDER_TYPING_STARTED, 	Boolean.toString(typingMessage.isTypingStarted()));
+//				attributes.put(ATTRIBUTE_SENDER_TYPING_STOPPED, 	Boolean.toString(typingMessage.isTypingStopped()));
+//			}
+//
+//			//Check receipts
+//			Optional<SignalServiceReceiptMessage> receiptMessage = decryptedMessage.getReceiptMessage();
+//			if(receiptMessage.isPresent()) {
+//				SignalServiceReceiptMessage msg = receiptMessage.get();
+//				attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(Boolean.TRUE));
+//				attributes.put(ATTRIBUTE_RECEIPT_DELIVERY, 	Boolean.toString(msg.isDeliveryReceipt()));
+//				attributes.put(ATTRIBUTE_RECEIPT_READ, 		Boolean.toString(msg.isReadReceipt()));
+//			}
+//			
+//			//Check for calls
+//			if(decryptedMessage.getCallMessage().isPresent()) {
+//				attributes.put(ATTRIBUTE_CALL_MESSAGE, 		Boolean.toString(Boolean.TRUE));
+//			}
+//
+//			//Check data message
+//			Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
+//			if(optionalDataMessage.isPresent()){
+//				SignalServiceDataMessage dataMessage = optionalDataMessage.get();
+//				attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(dataMessage.isViewOnce()));
+//				attributes.put(ATTRIBUTE_MESSAGE, dataMessage.getBody().or(""));
+//
+//				if(dataMessage.getReaction().isPresent()) {
+//					Reaction reaction = dataMessage.getReaction().get();
+//					attributes.put(ATTRIBUTE_MESSAGE_REACTION_EMOJI, reaction.getEmoji());
+//					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, reaction.getTargetAuthor().getNumber().get());
+//					attributes.put(ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(reaction.getTargetSentTimestamp()));
+//				}
+//
+//				if(dataMessage.getQuote().isPresent()) {
+//					Quote quote = dataMessage.getQuote().get();
+//					attributes.put(ATTRIBUTE_MESSAGE_QUOTE_ID, Long.toString(quote.getId()));
+//				}
+//
+//				if(dataMessage.getGroupContext().isPresent()) {
+//					SignalServiceGroupContext groupContext = dataMessage.getGroupContext().get();
+//					String groupId = service.getGroupId(groupContext);
+//					attributes.put(ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
+//
+//					String groupTitle = service.getGroupTitle(groupContext);
+//					attributes.put(ATTRIBUTE_MESSAGE_GROUP_TITLE, groupTitle);
+//				}
+//			}
+//
+//			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(ATTRIBUTE_SENDER_NUMBER));
+//
+//			FlowFile flowFile = session.create();
+//			flowFile = session.putAllAttributes(flowFile, attributes);
+//			session.transfer(flowFile, SUCCESS);
+//		} catch (Throwable e) {
+//			onError(e);
+//			
+//			attributes.put(ATTRIBUTE_ERROR_MESSAGE, e.getMessage());
+//			
+//			FlowFile flowFile = session.create();
+//			flowFile = session.putAllAttributes(flowFile, attributes);
+//			session.transfer(flowFile, FAILURE);
+//		}
+//		session.commit();
+//	}
 }
