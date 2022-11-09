@@ -64,7 +64,7 @@ public class PutSignalMessage extends AbstractProcessor {
 			.displayName("Source")
 			.description("From which number to send from")
 			.required(false)
-			.defaultValue("${" + ConsumeSignalMessage.ATTRIBUTE_RECEIVING_NUMBER + "}")
+			.defaultValue("${" + Constants.ATTRIBUTE_RECEIVING_NUMBER + "}")
 			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.build();

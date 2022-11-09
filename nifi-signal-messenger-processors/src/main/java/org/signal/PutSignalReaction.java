@@ -32,8 +32,8 @@ import org.apache.nifi.processor.util.StandardValidators;
 @CapabilityDescription("Sends a reaction on Signal message. This reads the attributes that ConsumeSignalMessage produces.")
 @SeeAlso({ConsumeSignalMessage.class})
 @ReadsAttributes({
-	@ReadsAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER, description="The target number to react to"),
-	@ReadsAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_TIMESTAMP, description="The target message timestamp to react to"),
+	@ReadsAttribute(attribute=Constants.ATTRIBUTE_SENDER_NUMBER, description="The target number to react to"),
+	@ReadsAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP, description="The target message timestamp to react to"),
 })
 public class PutSignalReaction extends AbstractProcessor {
 	private static final Map<String, String> EMOJI_NAMES;
@@ -116,9 +116,9 @@ public class PutSignalReaction extends AbstractProcessor {
 			return;
 		}
 
-		String targetAuthor = flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER);
+		String targetAuthor = flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER);
 		if(Objects.isNull(targetAuthor)) {
-			NullPointerException exc = new NullPointerException("Flowfile is missing attribute: " + ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER);
+			NullPointerException exc = new NullPointerException("Flowfile is missing attribute: " + Constants.ATTRIBUTE_SENDER_NUMBER);
 			getLogger().error(exc.getMessage(), exc);
 			session.transfer(flowFile, FAILURE);
 			return;
@@ -126,15 +126,15 @@ public class PutSignalReaction extends AbstractProcessor {
 		
 		targetAuthor = targetAuthor.trim();
 		if(targetAuthor.isEmpty()) {
-			NullPointerException exc = new NullPointerException("Flowfile has an empty " + ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER + " attribute");
+			NullPointerException exc = new NullPointerException("Flowfile has an empty " + Constants.ATTRIBUTE_SENDER_NUMBER + " attribute");
 			getLogger().error(exc.getMessage(), exc);
 			session.transfer(flowFile, FAILURE);
 			return;
 		}
 		
-		String targetTimestampString = flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_TIMESTAMP);
+		String targetTimestampString = flowFile.getAttribute(Constants.ATTRIBUTE_TIMESTAMP);
 		if(targetTimestampString == null) {
-			NullPointerException exc = new NullPointerException("Flowfile is missing attribute: " + ConsumeSignalMessage.ATTRIBUTE_TIMESTAMP);
+			NullPointerException exc = new NullPointerException("Flowfile is missing attribute: " + Constants.ATTRIBUTE_TIMESTAMP);
 			getLogger().error(exc.getMessage(), exc);
 			session.transfer(flowFile, FAILURE);
 			return;

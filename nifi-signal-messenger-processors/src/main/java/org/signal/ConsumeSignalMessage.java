@@ -40,62 +40,35 @@ import org.signal.model.SignalMessage;
 @TriggerSerially
 @SeeAlso({PutSignalMessage.class})
 @WritesAttributes({
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIPT, description="Values true or false depending on if the message is a receipt or not"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIPT_DELIVERY, description="Values true or false depending on if the message is a receipt and if the receipt is a delivery or not"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIPT_READ, description="Values true or false depending on if the message is a receipt and if the receipt is a read-message or not"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT, description="Values true or false depending on if the message is a receipt or not"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT_DELIVERY, description="Values true or false depending on if the message is a receipt and if the receipt is a delivery or not"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT_READ, description="Values true or false depending on if the message is a receipt and if the receipt is a read-message or not"),
 
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_CALL_MESSAGE, description="true if it is a call"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_CALL_MESSAGE, description="true if it is a call"),
 	
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE, description="The content of the message sent"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_VIEW_ONCE, description="Values true or false depending on if the message is a view once message"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_TIMESTAMP, description="Time when the message was sent"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message (this is the same as the one in the controller used)"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_VERIFIED, description="If the sender number is verified. One of: DEFAULT (trusted but not yet verified), VERIFIED (trusted and verified), UNVERIFIED (untrusted)"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_IDENTIFIED, description="If the sender number is identified"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE, description="The content of the message sent"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, description="Values true or false depending on if the message is a view once message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP, description="Time when the message was sent"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message (this is the same as the one in the controller used)"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_VERIFIED, description="If the sender number is verified. One of: DEFAULT (trusted but not yet verified), VERIFIED (trusted and verified), UNVERIFIED (untrusted)"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_IDENTIFIED, description="If the sender number is identified"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute"),
 
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_TYPING_STARTED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_SENDER_TYPING_STOPPED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_TYPING_STARTED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_TYPING_STOPPED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
 	
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message"),
 
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_QUOTE_ID, description="If the data-message contains a quote, then this attribute will be populated with the id (long)"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_QUOTE_ID, description="If the data-message contains a quote, then this attribute will be populated with the id (long)"),
 
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_ID, description="If the data-message is a message to a group, then this attribute will be populated with the base64 encoded group id"),
-	@WritesAttribute(attribute=ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_TITLE, description="If the data-message is a message to a group, then this attribute will be populated with the title of the group"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_GROUP_ID, description="If the data-message is a message to a group, then this attribute will be populated with the base64 encoded group id"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, description="If the data-message is a message to a group, then this attribute will be populated with the title of the group"),
 	})
 public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
-	public static final String ATTRIBUTE_RECEIPT = 								"signal.receipt";
-	public static final String ATTRIBUTE_RECEIPT_DELIVERY = 					"signal.receipt.delivery";
-	public static final String ATTRIBUTE_RECEIPT_READ = 						"signal.receipt.read";
-
-	public static final String ATTRIBUTE_CALL_MESSAGE = 						"signal.call";
-
-	public static final String ATTRIBUTE_MESSAGE = 								"signal.message";
-	public static final String ATTRIBUTE_MESSAGE_VIEW_ONCE = 					"signal.message.viewonce";
-	public static final String ATTRIBUTE_TIMESTAMP = 							"signal.timestamp";
-	public static final String ATTRIBUTE_RECEIVING_NUMBER = 					"signal.receiving.number";
-	public static final String ATTRIBUTE_SENDER_NUMBER = 						"signal.sender.number";
-	public static final String ATTRIBUTE_SENDER_VERIFIED = 						"signal.sender.verified";
-	public static final String ATTRIBUTE_SENDER_IDENTIFIED = 					"signal.sender.identified";
-
-	public static final String ATTRIBUTE_SENDER_TYPING_STARTED = 				"signal.sender.typing.started";
-	public static final String ATTRIBUTE_SENDER_TYPING_STOPPED = 				"signal.sender.typing.stopped";
-	
-	public static final String ATTRIBUTE_MESSAGE_REACTION_EMOJI = 				"signal.message.reaction.emoji";
-	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR = 		"signal.message.reaction.target.author";
-	public static final String ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP = 	"signal.message.reaction.target.timestamp";
-
-	public static final String ATTRIBUTE_MESSAGE_QUOTE_ID = 					"signal.message.quote.id";
-	
-	public static final String ATTRIBUTE_MESSAGE_GROUP_ID = 					"signal.message.group.id";
-	public static final String ATTRIBUTE_MESSAGE_GROUP_TITLE = 					"signal.message.group.title";
-
-	public  static final String ATTRIBUTE_ERROR_MESSAGE = 						"signal.error.message";
 
 	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
             .Builder().name("SignalService")
@@ -224,9 +197,9 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 //			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
 //			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
 
-			attributes.put(ATTRIBUTE_SENDER_NUMBER, 	message.getSource());
+			attributes.put(Constants.ATTRIBUTE_SENDER_NUMBER, 	message.getSource());
 //			attributes.put(ATTRIBUTE_SENDER_VERIFIED, 	verifiedValue);
-			attributes.put(ATTRIBUTE_TIMESTAMP, 		Long.toString(message.getTimestamp()));
+			attributes.put(Constants.ATTRIBUTE_TIMESTAMP, 		Long.toString(message.getTimestamp()));
 			
 //			if(opTypingMessage.isPresent()) {
 //				SignalServiceTypingMessage typingMessage = opTypingMessage.get();
@@ -249,8 +222,8 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 //			}
 
 			//Check data message
-			attributes.put(ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(message.isViewOnce()));
-			attributes.put(ATTRIBUTE_MESSAGE, message.getMessage());
+			attributes.put(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(message.isViewOnce()));
+			attributes.put(Constants.ATTRIBUTE_MESSAGE, message.getMessage());
 			
 //			Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
 //			if(optionalDataMessage.isPresent()){
@@ -278,7 +251,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 //				}
 //			}
 
-			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(ATTRIBUTE_SENDER_NUMBER));
+			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(Constants.ATTRIBUTE_SENDER_NUMBER));
 
 			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
@@ -286,7 +259,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 		} catch (Throwable e) {
 			onError(e);
 			
-			attributes.put(ATTRIBUTE_ERROR_MESSAGE, e.getMessage());
+			attributes.put(Constants.ATTRIBUTE_ERROR_MESSAGE, e.getMessage());
 			
 			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);

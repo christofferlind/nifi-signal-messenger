@@ -70,8 +70,8 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
     	assertEquals(1, flowFiles.size());
     	MockFlowFile flowFile = flowFiles.get(0);
-    	assertEquals(message, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE));
-    	assertEquals(numberB, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER));
+    	assertEquals(message, flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE));
+    	assertEquals(numberB, flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER));
     }
     
     @Test
@@ -112,12 +112,12 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
     	assertEquals(1, flowFiles.size());
     	MockFlowFile flowFile = flowFiles.get(0);
-    	assertEquals(message, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE));
-    	assertEquals(numberB, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_SENDER_NUMBER));
+    	assertEquals(message, flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE));
+    	assertEquals(numberB, flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER));
     	
-    	assertNotNull(flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_ID));
-    	assertNotEquals("", flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_ID));
-    	assertEquals(TEST_GROUP, flowFile.getAttribute(ConsumeSignalMessage.ATTRIBUTE_MESSAGE_GROUP_TITLE));
+    	assertNotNull(flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE_GROUP_ID));
+    	assertNotEquals("", flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE_GROUP_ID));
+    	assertEquals(TEST_GROUP, flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE));
     }
 
 }
