@@ -33,6 +33,8 @@ import org.apache.nifi.reporting.InitializationException;
 import org.signal.model.SignalMessage;
 
 import com.google.common.collect.EvictingQueue;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -53,6 +55,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private static final List<PropertyDescriptor> properties;
 	
+	private final static Gson GSON = new GsonBuilder().create();
+	
 	private final static Object LOCK_LISTENERS = new Object();
 
 	private Collection<Consumer<SignalMessage>> messageListeners = new LinkedHashSet<>(10);
@@ -64,13 +68,15 @@ public class SignalMessengerService extends AbstractControllerService implements
 		properties = Collections.unmodifiableList(props);
 	}
 
-	private String url;
-
 	private Thread receiveMessagesThread;
 
 	private volatile boolean started = false;
 
 	private EvictingQueue<SignalMessage> messageQueue;
+
+	private URL urlRpc;
+
+	private URL urlEvents;
 
 	@Override
 	protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -85,7 +91,13 @@ public class SignalMessengerService extends AbstractControllerService implements
 	 */
 	@OnEnabled
 	public void onEnabled(final ConfigurationContext context) throws InitializationException {
-		url = context.getProperty(PROP_DAEMON_URL).getValue();
+		String url = context.getProperty(PROP_DAEMON_URL).getValue();
+		try {
+			urlRpc = new URL(url + "/api/v1/rpc");
+			urlEvents = new URL(url + "/api/v1/events");
+		} catch (MalformedURLException e1) {
+			throw new InitializationException(e1);
+		}
 		
 		this.started = true;
 		
@@ -123,8 +135,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	}
 	
 	private void connectAndRecieveMessaged(String url2) throws InterruptedException, JsonSyntaxException, IOException {
-		URL urls = new URL(url + "/api/v1/events");
-		URLConnection connection = urls.openConnection();
+		URLConnection connection = urlEvents.openConnection();
 		if(connection instanceof HttpURLConnection) {
 			HttpURLConnection httpConnection = (HttpURLConnection) connection;
 			httpConnection.setRequestMethod("GET");
@@ -223,45 +234,47 @@ public class SignalMessengerService extends AbstractControllerService implements
 		getLogger().error(e.getMessage(), e);
 	}
 
-	private int sendJsonRPC(Object rpc) {
-		String payload = "";
-		try {
-			URL urls = new URL(url + "/api/v1/rpc");
-			URLConnection connection = urls.openConnection();
-			if(connection instanceof HttpURLConnection) {
-				HttpURLConnection httpConnection = (HttpURLConnection) connection;
-				httpConnection.setRequestMethod("POST");
-				httpConnection.setRequestProperty("Content-Type", "application/json");
-				httpConnection.setDoOutput(true);
-				
-				try(OutputStream outputStream = httpConnection.getOutputStream()){
-					outputStream.write(payload.getBytes(StandardCharsets.UTF_8));
-					outputStream.flush();
-				}
-				
-				int response = httpConnection.getResponseCode();
-				if(response == HttpURLConnection.HTTP_OK) {
-					try(
-							InputStream inputStream = httpConnection.getInputStream();
-							InputStreamReader reader = new InputStreamReader(inputStream);
-							BufferedReader bufferedReader = new BufferedReader(reader);
-							){
-						
-						JsonElement element = JsonParser.parseReader(bufferedReader);
+	private int sendJsonRPC(JsonObject rpc) throws IOException, UnsupportedOperationException {
+		String payload = GSON.toJson(rpc);
+
+		URLConnection connection = urlRpc.openConnection();
+		if(connection instanceof HttpURLConnection) {
+			HttpURLConnection httpConnection = (HttpURLConnection) connection;
+			httpConnection.setRequestMethod("POST");
+			httpConnection.setRequestProperty("Content-Type", "application/json");
+			httpConnection.setDoOutput(true);
+
+			try(OutputStream outputStream = httpConnection.getOutputStream()){
+				outputStream.write(payload.getBytes(StandardCharsets.UTF_8));
+				outputStream.flush();
+			}
+
+			int response = httpConnection.getResponseCode();
+			if(response == HttpURLConnection.HTTP_OK) {
+				try(
+						InputStream inputStream = httpConnection.getInputStream();
+						InputStreamReader reader = new InputStreamReader(inputStream);
+						BufferedReader bufferedReader = new BufferedReader(reader);
+						){
+
+					JsonObject element = JsonParser.parseReader(bufferedReader).getAsJsonObject();
+					if(!element.has("jsonrpc") && !"2.0".equals(element.get("jsonrpc").getAsString())){
+						throw new UnsupportedOperationException("Unexpected answer from server: " + element.toString());
+					}
+
+					//Check for error
+					if(element.has("error")) {
+						JsonObject jsonError = element.get("error").getAsJsonObject();
+						throw new UnsupportedOperationException(String.format("%s (ErrorCode: %s)", jsonError.get("message").getAsString(), jsonError.get("code").getAsLong()));
+					} else {
+						//Handle success
 					}
 				}
-			} else {
-				throw new UnsupportedOperationException();
 			}
-			
-		} catch (MalformedURLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		} else {
+			throw new UnsupportedOperationException();
 		}
-		
+
 		return 0;
 	}
 
@@ -287,7 +300,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	}
 
 	@Override
-	public void sendMessage(String account, List<String> recipients, String message, Object attachment) {
+	public void sendMessage(String account, List<String> recipients, String message, Object attachment) throws IOException, UnsupportedOperationException {
 		JsonArray array = new JsonArray(recipients.size());
 		recipients.forEach(array::add);
 		
@@ -301,6 +314,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 		rpc.addProperty("jsonrpc", "2.0");
 		rpc.addProperty("method", "send");
 		rpc.add("params", jsonParams);
+		
+		sendJsonRPC(rpc);
 	}
 
 	@Override

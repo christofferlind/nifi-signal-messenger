@@ -16,8 +16,6 @@
  */
 package org.signal;
 
-import static org.junit.Assert.assertEquals;
-
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
@@ -88,7 +86,7 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	runner.run();
     	runner.assertAllFlowFilesTransferred(PutSignalMessage.FAILURE, 1);
     	MockFlowFile ff = runner.getFlowFilesForRelationship(PutSignalMessage.FAILURE).get(0);
-    	assertEquals(Boolean.toString(true), ff.getAttribute("signal.send.failed.unregistered"));
+    	ff.assertAttributeEquals(Constants.ATTRIBUTE_ERROR_MESSAGE, "Specified account does not exist (ErrorCode: -32602)");
     }
 
 }

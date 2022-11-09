@@ -1,5 +1,6 @@
 package org.signal;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -12,7 +13,7 @@ import org.signal.model.SignalMessage;
 @CapabilityDescription("Signal Messenger API")
 public interface SignalControllerService extends ControllerService {
 
-	public void sendMessage(String account, List<String> recipients, String message, Object attachment);
+	public void sendMessage(String account, List<String> recipients, String message, Object attachment) throws IOException, UnsupportedOperationException;
 	
 	public void sendGroupMessage(String account, List<String> groups, String message, Object attachment);
 

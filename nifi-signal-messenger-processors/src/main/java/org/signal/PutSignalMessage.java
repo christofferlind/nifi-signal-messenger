@@ -1,11 +1,18 @@
 package org.signal;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -57,6 +64,7 @@ public class PutSignalMessage extends AbstractProcessor {
 			.displayName("Source")
 			.description("From which number to send from")
 			.required(false)
+			.defaultValue("${" + ConsumeSignalMessage.ATTRIBUTE_RECEIVING_NUMBER + "}")
 			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.build();
@@ -168,8 +176,8 @@ public class PutSignalMessage extends AbstractProcessor {
 				if(messageContent == null || messageContent.isEmpty()) {
 					try {
 						getLogger().info("Message is empty, using content as message");
-//						StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
-//						messageContent = content.toString();
+						StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
+						messageContent = content.toString();
 					} catch (Throwable e) {
 						getLogger().error(e.getMessage(), e);
 						session.transfer(flowFile, FAILURE);
@@ -212,7 +220,12 @@ public class PutSignalMessage extends AbstractProcessor {
 		if(message == null)
 			message = "";
 		
-		session.transfer(session.putAttribute(flowFile, "signal.send.error.message", message), FAILURE);		
+		Map<String, String> attributes = Map.of(
+				Constants.ATTRIBUTE_ERROR_MESSAGE, message,
+				Constants.ATTRIBUTE_ERROR_MESSAGE_SEND, message
+				);
+		
+		session.transfer(session.putAllAttributes(flowFile, attributes), FAILURE);		
 	}
 
 	private void transferFailedFlowFile(final ProcessSession session, FlowFile flowFile, Object result) {
@@ -293,37 +306,37 @@ public class PutSignalMessage extends AbstractProcessor {
 		return recipients;
 	}
 
-//	private StringBuilder loadFlowFileContentAsMessageContent(final ProcessSession session, FlowFile flowFile) {
-//		StringBuilder content = new StringBuilder();
-//
-//		session.read(flowFile, inputstream -> {
-//			try(
-//					InputStreamReader streamReader = new InputStreamReader(inputstream, Charset.forName("UTF8"));
-//					BufferedReader bufferedReader = new BufferedReader(streamReader);
-//					){
-//				String line = null;
-//				while((line = bufferedReader.readLine()) != null) {
-//					content.append(line).append("\n");
-//				}
-//			}
-//		});
-//		return content;
-//	}
-//	private static final int BUF_SIZE = 0x1000; // 4K
-//
-//	public static long copy(InputStream from, OutputStream to) throws IOException {
-//		Objects.nonNull(from);
-//		Objects.nonNull(to);
-//		byte[] buf = new byte[BUF_SIZE];
-//		long total = 0;
-//		while (true) {
-//			int r = from.read(buf);
-//			if (r == -1) {
-//				break;
-//			}
-//			to.write(buf, 0, r);
-//			total += r;
-//		}
-//		return total;
-//	}
+	private StringBuilder loadFlowFileContentAsMessageContent(final ProcessSession session, FlowFile flowFile) {
+		StringBuilder content = new StringBuilder();
+
+		session.read(flowFile, inputstream -> {
+			try(
+					InputStreamReader streamReader = new InputStreamReader(inputstream, Charset.forName("UTF8"));
+					BufferedReader bufferedReader = new BufferedReader(streamReader);
+					){
+				String line = null;
+				while((line = bufferedReader.readLine()) != null) {
+					content.append(line).append("\n");
+				}
+			}
+		});
+		return content;
+	}
+	private static final int BUF_SIZE = 0x1000; // 4K
+
+	public static long copy(InputStream from, OutputStream to) throws IOException {
+		Objects.nonNull(from);
+		Objects.nonNull(to);
+		byte[] buf = new byte[BUF_SIZE];
+		long total = 0;
+		while (true) {
+			int r = from.read(buf);
+			if (r == -1) {
+				break;
+			}
+			to.write(buf, 0, r);
+			total += r;
+		}
+		return total;
+	}
 }
