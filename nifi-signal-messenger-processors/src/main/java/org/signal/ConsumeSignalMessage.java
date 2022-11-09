@@ -78,29 +78,29 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .identifiesControllerService(SignalControllerService.class)
             .build();
 
-	public static final PropertyDescriptor IGNORE_RECEIPT_MESSAGE = new PropertyDescriptor
-            .Builder().name("ReceiptMessages")
-            .displayName("Ignore receipts")
-            .description("Don't transfer any receipt messages")
-            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
-            .defaultValue(Boolean.toString(Boolean.TRUE))
-            .build();
+//	public static final PropertyDescriptor IGNORE_RECEIPT_MESSAGE = new PropertyDescriptor
+//            .Builder().name("ReceiptMessages")
+//            .displayName("Ignore receipts")
+//            .description("Don't transfer any receipt messages")
+//            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
+//            .defaultValue(Boolean.toString(Boolean.TRUE))
+//            .build();
+//
+//	public static final PropertyDescriptor IGNORE_TYPING_MESSAGE = new PropertyDescriptor
+//            .Builder().name("TypingMessages")
+//            .displayName("Ignore typing messages")
+//            .description("Don't transfer any typing messages")
+//            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
+//            .defaultValue(Boolean.toString(Boolean.TRUE))
+//            .build();
 
-	public static final PropertyDescriptor IGNORE_TYPING_MESSAGE = new PropertyDescriptor
-            .Builder().name("TypingMessages")
-            .displayName("Ignore typing messages")
-            .description("Don't transfer any typing messages")
-            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
-            .defaultValue(Boolean.toString(Boolean.TRUE))
-            .build();
-
-	public static final PropertyDescriptor IGNORE_UNVERIFIED_SENDER = new PropertyDescriptor
-            .Builder().name("IgnoreUnverifiedSender")
-            .displayName("Ignore unverified sender")
-            .description("If set to to true then only messages sent by a trusted and verified sender identity (at least one) is transfered to success relationship.")
-            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
-            .defaultValue(Boolean.toString(Boolean.FALSE))
-            .build();
+//	public static final PropertyDescriptor IGNORE_UNVERIFIED_SENDER = new PropertyDescriptor
+//            .Builder().name("IgnoreUnverifiedSender")
+//            .displayName("Ignore unverified sender")
+//            .description("If set to to true then only messages sent by a trusted and verified sender identity (at least one) is transfered to success relationship.")
+//            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
+//            .defaultValue(Boolean.toString(Boolean.FALSE))
+//            .build();
 
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
@@ -120,18 +120,12 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
     private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
 
-	private boolean ignoreReceipts;
-	private boolean ignoreTyping;
-	private boolean ignoreUnverifiedSenders;
 	private volatile Consumer<SignalMessage> messageListener;
 
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
         descriptors.add(SIGNAL_SERVICE);
-        descriptors.add(IGNORE_RECEIPT_MESSAGE);
-        descriptors.add(IGNORE_TYPING_MESSAGE);
-        descriptors.add(IGNORE_UNVERIFIED_SENDER);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -153,9 +147,6 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     @OnScheduled
     public void onScheduled(ProcessContext context) throws ProcessException {
     	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-    	ignoreReceipts = context.getProperty(IGNORE_RECEIPT_MESSAGE).asBoolean();
-    	ignoreTyping = context.getProperty(IGNORE_TYPING_MESSAGE).asBoolean();
-    	ignoreUnverifiedSenders = context.getProperty(IGNORE_UNVERIFIED_SENDER).asBoolean();
     }
     
     private void onError(Throwable e) {
