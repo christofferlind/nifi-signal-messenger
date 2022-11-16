@@ -24,6 +24,11 @@ public class SignalIdentity {
 
 	@SerializedName("addedTimestamp")
 	private long timestampAdded;
+	
+	@Override
+	public String toString() {
+		return String.format("%s [%s]", getNumber(), getTrustLevel());
+	}
 
 	public String getNumber() {
 		return number;

@@ -23,6 +23,11 @@ public class SignalGroup {
 
 	@SerializedName("permissionSendMessage")
 	private String permissionSendMessage;
+	
+	@Override
+	public String toString() {
+		return String.format("Grp: %s (%s) ", getName(), getDescription());
+	}
 
 	public String getId() {
 		return id;

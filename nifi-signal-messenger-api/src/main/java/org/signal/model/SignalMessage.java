@@ -59,4 +59,9 @@ public class SignalMessage {
 	public String getGroupId() {
 		return groupId;
 	}
+	
+	@Override
+	public String toString() {
+		return String.format("Msg from %s to %s", getSource(), getAccount());
+	}
 }
