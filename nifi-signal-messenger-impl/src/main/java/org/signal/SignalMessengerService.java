@@ -189,6 +189,9 @@ public class SignalMessengerService extends AbstractControllerService implements
 					return;
 				}
 				onError(e);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return;
 			} catch (Throwable e) {
 				onError(e);
 			} finally {
