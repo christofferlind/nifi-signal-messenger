@@ -102,7 +102,9 @@ public class SignalMessengerService extends AbstractControllerService implements
     			return Collections.emptyMap();
     		
     		Map<String, SignalIdentity> identities = 
-    				result.stream().collect(Collectors.toMap(
+    				result.stream()
+    					.filter(e -> e.getNumber() != null)
+    					.collect(Collectors.toMap(
 	    				SignalIdentity::getNumber, 
 	    				Function.identity(), 
 	    				(a,b) -> a) // This will ignore any duplicates. Will listIdentities ever return the same number twice?!
@@ -121,14 +123,14 @@ public class SignalMessengerService extends AbstractControllerService implements
     		if(result == null)
     			return Collections.emptyMap();
     		
-    		Map<String, SignalGroup> identities = 
+    		Map<String, SignalGroup> groups = 
     				result.stream().collect(Collectors.toMap(
 	    				SignalGroup::getId, 
 	    				Function.identity(), 
 	    				(a,b) -> a) // This will ignore any duplicates. Will listIdentities ever return the same number twice?!
 	    				);
     		
-    		return identities;
+    		return groups;
         }
     };
 
@@ -444,19 +446,19 @@ public class SignalMessengerService extends AbstractControllerService implements
 	public JsonElement sendJsonRpc(String method, JsonObject params, String msgId) throws UnsupportedOperationException, IOException {
 		JsonObject rpc = new JsonObject();
 		
-		if(msgId != null)
-			rpc.addProperty("id", msgId);
-		else
-			rpc.add("id", JsonNull.INSTANCE);
+		if(msgId == null || msgId.isBlank())
+			msgId = String.format("%s-%s", method, (int)Math.random()*10_000);
+		
+		rpc.addProperty("id", msgId);
 		
 		rpc.addProperty("jsonrpc", "2.0");
 		rpc.addProperty("method", method);
 		rpc.add("params", Objects.requireNonNull(params));
 		
-		return internalSend(rpc);
+		return internalSend(rpc, msgId);
 	}
 
-	private JsonElement internalSend(JsonObject rpc) throws IOException, UnsupportedOperationException {
+	private JsonElement internalSend(JsonObject rpc, String msgId) throws IOException, UnsupportedOperationException {
 		String payload = GSON.toJson(rpc);
 
 		URLConnection connection = urlRpc.openConnection();
@@ -484,12 +486,16 @@ public class SignalMessengerService extends AbstractControllerService implements
 						throw new UnsupportedOperationException("Unexpected answer from server: " + element.toString());
 					}
 
+					if(!msgId.equals(element.get("id").getAsString())){
+						throw new UnsupportedOperationException("Unexpected message id from server: " + element.toString() + " (should be: " + msgId + ")");
+					}
+					
 					//Check for error
 					if(element.has("error")) {
 						JsonObject jsonError = element.get("error").getAsJsonObject();
 						throw new UnsupportedOperationException(String.format("%s (ErrorCode: %s)", jsonError.get("message").getAsString(), jsonError.get("code").getAsLong()));
 					} else {
-						//Handle success
+						return element.get("result");
 					}
 				}
 			}

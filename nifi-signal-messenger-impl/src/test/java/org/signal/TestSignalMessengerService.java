@@ -18,19 +18,27 @@ package org.signal;
 
 import static org.junit.Assert.assertFalse;
 
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
+import org.signal.model.SignalGroup;
+import org.signal.model.SignalIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class TestSignalMessengerService {
 	private static final Logger LOGGER = LoggerFactory.getLogger(TestSignalMessengerService.class);
+
 	private String url = System.getenv("nifi-signal-messenger.test.url");
+	
+	protected String numberA = System.getenv("nifi-signal-messenger.test.number.a");
 	
     private TestRunner runner;
 	private SignalMessengerService service;
@@ -40,7 +48,7 @@ public class TestSignalMessengerService {
         runner = TestRunners.newTestRunner(TestSignalMessengerServiceProcessor.class);
         service = new SignalMessengerService();
         runner.addControllerService("signalservice", service);
-        runner.setProperty(service, SignalMessengerService.PROP_DAEMON_URL, url+"9");
+        runner.setProperty(service, SignalMessengerService.PROP_DAEMON_URL, url);
     }
 
     @Test
@@ -63,6 +71,66 @@ public class TestSignalMessengerService {
 //        assertEquals(number, service.getSignalUsername());
 //        assertNotNull(service.getMessageSender());
         runner.run();
+        runner.disableControllerService(service);
+        
+        assertFalse(runner.isControllerServiceEnabled(service));
+    }
+
+    @Test
+    public void testListIdentities() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InterruptedException, UnsupportedOperationException, IOException, ExecutionException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+    	
+    	if(numberA == null || numberA.isBlank()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+    	}
+
+    	resetRunner();
+
+        runner.enableControllerService(service);
+
+        runner.assertValid(service);
+        
+        runner.run();
+        
+        Map<String, SignalIdentity> idents = service.getIdentities(numberA);
+        assertFalse(idents.isEmpty());
+        
+        runner.disableControllerService(service);
+        
+        assertFalse(runner.isControllerServiceEnabled(service));
+    }
+
+    @Test
+    public void testListGroups() throws NoSuchMethodException, IllegalAccessException, InvocationTargetException, InterruptedException, UnsupportedOperationException, IOException, ExecutionException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+    	
+    	if(numberA == null || numberA.isBlank()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+    	}
+
+    	resetRunner();
+
+        runner.enableControllerService(service);
+
+        runner.assertValid(service);
+        
+        runner.run();
+        
+        Map<String, SignalGroup> groups = service.getGroups(numberA);
+        assertFalse(groups.isEmpty());
+        
         runner.disableControllerService(service);
         
         assertFalse(runner.isControllerServiceEnabled(service));
