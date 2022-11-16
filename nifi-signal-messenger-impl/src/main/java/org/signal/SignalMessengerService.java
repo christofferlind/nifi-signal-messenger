@@ -30,6 +30,7 @@ import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
+import org.signal.model.SignalIdentities;
 import org.signal.model.SignalMessage;
 
 import com.google.common.collect.EvictingQueue;
@@ -37,9 +38,11 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
+import com.google.gson.reflect.TypeToken;
 
 @Tags({ "Signal", "Messenger"})
 @CapabilityDescription("Signal Messenger service")
@@ -54,6 +57,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 			.build();
 
 	private static final List<PropertyDescriptor> properties;
+	
+	private TypeToken<List<SignalIdentities>> gsonTypeListIdentities = testing;
 	
 	private final static Gson GSON = new GsonBuilder().create();
 	
@@ -77,6 +82,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	private URL urlRpc;
 
 	private URL urlEvents;
+
 
 	@Override
 	protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -234,7 +240,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		getLogger().error(e.getMessage(), e);
 	}
 
-	private int sendJsonRPC(JsonObject rpc) throws IOException, UnsupportedOperationException {
+	private JsonElement sendJsonRPC(JsonObject rpc) throws IOException, UnsupportedOperationException {
 		String payload = GSON.toJson(rpc);
 
 		URLConnection connection = urlRpc.openConnection();
@@ -275,7 +281,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 			throw new UnsupportedOperationException();
 		}
 
-		return 0;
+		return JsonNull.INSTANCE;
 	}
 
 	@OnDisabled
@@ -354,6 +360,22 @@ public class SignalMessengerService extends AbstractControllerService implements
 		for (Consumer<SignalMessage> consumer : messageListeners) {
 			consumer.accept(message);
 		}
+	}
+
+	@Override
+	public Collection<SignalIdentities> getIdentities(String account) throws UnsupportedOperationException, IOException {
+		JsonObject params = new JsonObject();
+		params.addProperty("account", account);
+		
+		JsonObject json = new JsonObject();
+		json.addProperty("jsonrpc", "2.0");
+		json.addProperty("method", "listIdentities");
+		json.addProperty("id", 345);
+		json.add("params", params);
+		
+		JsonElement responce = sendJsonRPC(json);
+		List<SignalIdentities> result = GSON.fromJson(responce, gsonTypeListIdentities);
+		return result;
 	}
 
 }
