@@ -31,6 +31,7 @@ import org.apache.nifi.processor.ProcessSessionFactory;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
@@ -94,13 +95,13 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 //            .defaultValue(Boolean.toString(Boolean.TRUE))
 //            .build();
 
-//	public static final PropertyDescriptor IGNORE_UNVERIFIED_SENDER = new PropertyDescriptor
-//            .Builder().name("IgnoreUnverifiedSender")
-//            .displayName("Ignore unverified sender")
-//            .description("If set to to true then only messages sent by a trusted and verified sender identity (at least one) is transfered to success relationship.")
-//            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
-//            .defaultValue(Boolean.toString(Boolean.FALSE))
-//            .build();
+	public static final PropertyDescriptor IGNORE_TRUSTED_SENDER = new PropertyDescriptor
+            .Builder().name("IgnoreTrustedSender")
+            .displayName("Ignore untrusted sender")
+            .description("If set to to true then only messages sent by a trusted sender identity (at least one) is transfered to success relationship.")
+            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
+            .defaultValue(Boolean.toString(Boolean.FALSE))
+            .build();
 
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
@@ -121,11 +122,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
 
 	private volatile Consumer<SignalMessage> messageListener;
+
+	private Boolean ignoreUntrustedMessages;
 	
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
         descriptors.add(SIGNAL_SERVICE);
+        descriptors.add(IGNORE_TRUSTED_SENDER);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -147,11 +151,13 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     @OnScheduled
     public void onScheduled(ProcessContext context) throws ProcessException {
     	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
+    	ignoreUntrustedMessages = context.getProperty(IGNORE_TRUSTED_SENDER).asBoolean();
     }
     
     private void onError(Throwable e) {
     	ComponentLog logger = getLogger();
-    	logger.error(e.getMessage(), e);
+    	if(logger.isErrorEnabled()) 
+    		logger.error(e.getMessage(), e);
     }
     
     @OnStopped
@@ -159,7 +165,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     	if(messageListener != null && service != null) {
     		service.removeMessageListener(messageListener);
     	}
-    	
+
     	messageListener = null;
     }
 
@@ -182,15 +188,38 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			return;
 		}
 		
-		ProcessSession session = sessionFactory.createSession();
 		Map<String, String> attributes = new HashMap<>(20);
+			
+		String account = message.getAccount();
+		String source = message.getSource();
+		
 		try {
-//			attributes.put(ATTRIBUTE_SENDER_IDENTIFIED, Boolean.toString(!envelope.isUnidentifiedSender()));
-//			attributes.put(ATTRIBUTE_RECEIPT, 			Boolean.toString(envelope.isReceipt()));
+			attributes.put(Constants.ATTRIBUTE_SENDER_NUMBER, 			source);
+			attributes.put(Constants.ATTRIBUTE_TIMESTAMP, 				Long.toString(message.getTimestamp()));
+			
+			// ********************************
+			// Set verification attribute
+			// ********************************
+			attributes.put(Constants.ATTRIBUTE_SENDER_VERIFIED, 		"UNTRUSTED");
+			
+			SignalIdentity identity = service.getIdentities(account).get(source);
+			if(identity != null) {
+				attributes.put(Constants.ATTRIBUTE_SENDER_VERIFIED, 	identity.getTrustLevel());
+			}
+			
+			if(ignoreUntrustedMessages && isUntrusted(attributes)) {
+				ComponentLog logger = getLogger();
+				if(logger.isWarnEnabled()) 
+					logger.warn("Message recieved from untrusted number: " + source);
+				return;
+			}
 
-			attributes.put(Constants.ATTRIBUTE_SENDER_NUMBER, 	message.getSource());
-//			attributes.put(ATTRIBUTE_SENDER_VERIFIED, 	verifiedValue);
-			attributes.put(Constants.ATTRIBUTE_TIMESTAMP, 		Long.toString(message.getTimestamp()));
+			// ********************************
+			// Check message
+			// ********************************
+			attributes.put(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(message.isViewOnce()));
+			attributes.put(Constants.ATTRIBUTE_MESSAGE, message.getMessage());
+
 			
 //			if(opTypingMessage.isPresent()) {
 //				SignalServiceTypingMessage typingMessage = opTypingMessage.get();
@@ -212,9 +241,6 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 //				attributes.put(ATTRIBUTE_CALL_MESSAGE, 		Boolean.toString(Boolean.TRUE));
 //			}
 
-			//Check data message
-			attributes.put(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(message.isViewOnce()));
-			attributes.put(Constants.ATTRIBUTE_MESSAGE, message.getMessage());
 			
 //			Optional<SignalServiceDataMessage> optionalDataMessage = decryptedMessage.getDataMessage();
 //			if(optionalDataMessage.isPresent()){
@@ -244,6 +270,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
 			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(Constants.ATTRIBUTE_SENDER_NUMBER));
 
+			ProcessSession session = sessionFactory.createSession();
 			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, SUCCESS);
@@ -252,11 +279,15 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			
 			attributes.put(Constants.ATTRIBUTE_ERROR_MESSAGE, e.getMessage());
 			
+			ProcessSession session = sessionFactory.createSession();
 			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, FAILURE);
 		}
-		session.commit();
+	}
+
+	private boolean isUntrusted(Map<String, String> attributes) {
+		return "UNTRUSTED".equalsIgnoreCase(attributes.get(Constants.ATTRIBUTE_SENDER_VERIFIED));
 	}
 
 //	private void handleEnvelope(SignalServiceEnvelope envelope, SignalServiceContent decryptedMessage) {

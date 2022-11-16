@@ -2,7 +2,7 @@ package org.signal.model;
 
 import com.google.gson.annotations.SerializedName;
 
-public class SignalIdentities {
+public class SignalIdentity {
 
 	@SerializedName("number")
 	private String number;

@@ -19,7 +19,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -30,9 +34,12 @@ import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
-import org.signal.model.SignalIdentities;
+import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.collect.EvictingQueue;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -58,7 +65,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private static final List<PropertyDescriptor> properties;
 	
-	private TypeToken<ArrayList<SignalIdentities>> gsonTypeListIdentities =  new TypeToken<ArrayList<SignalIdentities>>() {};
+	private TypeToken<ArrayList<SignalIdentity>> gsonTypeListIdentities =  new TypeToken<ArrayList<SignalIdentity>>() {};
 	
 	private final static Gson GSON = new GsonBuilder().create();
 	
@@ -83,6 +90,27 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private URL urlEvents;
 
+    private CacheLoader<String, Map<String, SignalIdentity>> loaderIdentities = new CacheLoader<>() {
+        @Override
+        public Map<String, SignalIdentity> load(String account) throws UnsupportedOperationException, IOException {
+        	JsonElement responce = sendJsonRpc("listIdentities", getAccountParam(account));
+    		List<SignalIdentity> result = GSON.fromJson(responce, gsonTypeListIdentities);
+
+    		if(result == null)
+    			return Collections.emptyMap();
+    		
+    		Map<String, SignalIdentity> identities = 
+    				result.stream().collect(Collectors.toMap(
+	    				SignalIdentity::getNumber, 
+	    				Function.identity(), 
+	    				(a,b) -> a) // This will ignore any duplicates. Will listIdentities ever return the same number twice?!
+	    				);
+    		
+    		return identities;
+        }
+    };
+
+    private LoadingCache<String, Map<String, SignalIdentity>> cacheIdentities; 
 
 	@Override
 	protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -104,6 +132,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 		} catch (MalformedURLException e1) {
 			throw new InitializationException(e1);
 		}
+		
+    	cacheIdentities = CacheBuilder.newBuilder()
+    			.expireAfterAccess(1, TimeUnit.HOURS)
+    			.build(loaderIdentities);
 		
 		this.started = true;
 		
@@ -256,6 +288,13 @@ public class SignalMessengerService extends AbstractControllerService implements
 			messageListeners.clear();
 			messageListenersLastMessage.clear();
 		}
+		
+    	if(cacheIdentities != null) {
+    		try {
+				cacheIdentities.invalidateAll();
+			} catch (Throwable e) { }
+    		cacheIdentities = null;
+    	}
 	}
 	
 	public boolean isStarted() {
@@ -315,10 +354,11 @@ public class SignalMessengerService extends AbstractControllerService implements
 	}
 
 	@Override
-	public Collection<SignalIdentities> getIdentities(String account) throws UnsupportedOperationException, IOException {
-		JsonElement responce = sendJsonRpc("listIdentities", getAccountParam(account));
-		List<SignalIdentities> result = GSON.fromJson(responce, gsonTypeListIdentities);
-		return result;
+	public Map<String, SignalIdentity> getIdentities(String account) throws UnsupportedOperationException, IOException, ExecutionException {
+		if(cacheIdentities == null)
+			return Collections.emptyMap();
+		
+		return cacheIdentities.get(account);
 	}
 	
 	private static final JsonObject getAccountParam(String account) {

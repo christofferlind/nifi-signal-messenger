@@ -1,15 +1,15 @@
 package org.signal;
 
 import java.io.IOException;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.controller.ControllerService;
-import org.signal.model.SignalIdentities;
+import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 
 import com.google.gson.JsonElement;
@@ -27,7 +27,7 @@ public interface SignalControllerService extends ControllerService {
 
 	public void removeMessageListener(Consumer<SignalMessage> messageListener);
 
-	public Collection<SignalIdentities> getIdentities(String account) throws UnsupportedOperationException, IOException;
+	public Map<String, SignalIdentity> getIdentities(String account) throws UnsupportedOperationException, IOException, ExecutionException;
 	
 	public JsonElement sendJsonRpc(String method, JsonObject params) throws UnsupportedOperationException, IOException; 	
 	public JsonElement sendJsonRpc(String method, Map<String, String> params) throws UnsupportedOperationException, IOException;
