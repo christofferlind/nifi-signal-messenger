@@ -11,6 +11,7 @@ public class Constants {
 	public static final String ATTRIBUTE_MESSAGE = 								"signal.message";
 	public static final String ATTRIBUTE_MESSAGE_VIEW_ONCE = 					"signal.message.viewonce";
 	public static final String ATTRIBUTE_TIMESTAMP = 							"signal.timestamp";
+	public static final String ATTRIBUTE_ACCOUNT_NUMBER = 						"signal.account.number";
 	public static final String ATTRIBUTE_RECEIVING_NUMBER = 					"signal.receiving.number";
 	public static final String ATTRIBUTE_SENDER_NUMBER = 						"signal.sender.number";
 	public static final String ATTRIBUTE_SENDER_VERIFIED = 						"signal.sender.verified";

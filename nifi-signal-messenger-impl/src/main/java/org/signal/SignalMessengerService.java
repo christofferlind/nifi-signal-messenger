@@ -34,6 +34,7 @@ import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
+import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 
@@ -66,6 +67,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	private static final List<PropertyDescriptor> properties;
 	
 	private TypeToken<ArrayList<SignalIdentity>> gsonTypeListIdentities =  new TypeToken<ArrayList<SignalIdentity>>() {};
+	private TypeToken<ArrayList<SignalGroup>> gsonTypeListGroups =  new TypeToken<ArrayList<SignalGroup>>() {};
 	
 	private final static Gson GSON = new GsonBuilder().create();
 	
@@ -110,7 +112,28 @@ public class SignalMessengerService extends AbstractControllerService implements
         }
     };
 
+    private CacheLoader<String, Map<String, SignalGroup>> loaderGroups = new CacheLoader<>() {
+        @Override
+        public Map<String, SignalGroup> load(String account) throws UnsupportedOperationException, IOException {
+        	JsonElement responce = sendJsonRpc("listGroups", getAccountParam(account));
+    		List<SignalGroup> result = GSON.fromJson(responce, gsonTypeListGroups);
+
+    		if(result == null)
+    			return Collections.emptyMap();
+    		
+    		Map<String, SignalGroup> identities = 
+    				result.stream().collect(Collectors.toMap(
+	    				SignalGroup::getId, 
+	    				Function.identity(), 
+	    				(a,b) -> a) // This will ignore any duplicates. Will listIdentities ever return the same number twice?!
+	    				);
+    		
+    		return identities;
+        }
+    };
+
     private LoadingCache<String, Map<String, SignalIdentity>> cacheIdentities; 
+    private LoadingCache<String, Map<String, SignalGroup>> cacheGroups; 
 
 	@Override
 	protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -134,8 +157,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
 		
     	cacheIdentities = CacheBuilder.newBuilder()
-    			.expireAfterAccess(1, TimeUnit.HOURS)
+    			.expireAfterAccess(6, TimeUnit.HOURS)
     			.build(loaderIdentities);
+		
+    	cacheGroups = CacheBuilder.newBuilder()
+    			.expireAfterAccess(6, TimeUnit.HOURS)
+    			.build(loaderGroups);
 		
 		this.started = true;
 		
@@ -206,7 +233,13 @@ public class SignalMessengerService extends AbstractControllerService implements
 						String jsonData = line.substring(5);
 
 						JsonElement element = JsonParser.parseString(jsonData);
-						processData(element);
+						SignalMessage msg = processData(element);
+						if(msg != null) {
+							synchronized (LOCK_LISTENERS) {
+								messageQueue.add(msg);
+								notifyListeners(msg);
+							}
+						}
 						continue;
 					}
 				}
@@ -216,49 +249,53 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
 	}
 
-	private void processData(JsonElement element) {
-		if(element.isJsonObject()){
-			JsonObject jsonObject = element.getAsJsonObject();
-			if(!jsonObject.has("account") || !jsonObject.has("envelope")) {
-				UnsupportedOperationException exc = new UnsupportedOperationException("Unsupporterd signal message");
-				getLogger().error(exc.getMessage(), exc);
-				return;
-			}
-			
-			JsonObject jsonEnvelope = jsonObject.get("envelope").getAsJsonObject();
-			if(!jsonEnvelope.has("timestamp")) {
-				UnsupportedOperationException exc = new UnsupportedOperationException("Unsupporterd signal message");
-				getLogger().error(exc.getMessage(), exc);
-				return;
-			}
-			
-			long timestamp = jsonEnvelope.get("timestamp").getAsLong();
-			Optional<String> sourceName = getFieldString(jsonEnvelope, "sourceName");
-			Optional<String> source = getFieldString(jsonEnvelope, "sourceNumber");
-			
-				
-			if(jsonEnvelope.has("dataMessage")) {
-				JsonObject dataMessage = jsonEnvelope.get("dataMessage").getAsJsonObject();
-				String message = dataMessage.get("message").getAsString();
-				
-				SignalMessage msg = new SignalMessage();
-				msg.setMessage(message);
-				msg.setSource(source.orElseGet(() -> "Unknown"));
-				msg.setSourceName(sourceName.orElseGet(() -> "Unknown"));
-				msg.setTimestamp(timestamp);
-
-				synchronized (LOCK_LISTENERS) {
-					messageQueue.add(msg);
-					
-					notifyListeners(msg);
-				}
-
-			} else if(jsonEnvelope.has("receiptMessage")) {
-				//TODO implement
-			} else if(jsonEnvelope.has("typingMessage")) {
-				//TODO: implement
-			}
+	private SignalMessage processData(JsonElement element) {
+		if(!element.isJsonObject()){
+			return null;
 		}
+		
+		JsonObject jsonObject = element.getAsJsonObject();
+		if(!jsonObject.has("account") || !jsonObject.has("envelope")) {
+			UnsupportedOperationException exc = new UnsupportedOperationException("Unsupporterd signal message");
+			getLogger().error(exc.getMessage(), exc);
+			return null;
+		}
+
+		JsonObject jsonEnvelope = jsonObject.get("envelope").getAsJsonObject();
+		if(!jsonEnvelope.has("timestamp")) {
+			UnsupportedOperationException exc = new UnsupportedOperationException("Unsupporterd signal message");
+			getLogger().error(exc.getMessage(), exc);
+			return null;
+		}
+
+		long timestamp = jsonEnvelope.get("timestamp").getAsLong();
+		Optional<String> sourceName = getFieldString(jsonEnvelope, "sourceName");
+		Optional<String> source = getFieldString(jsonEnvelope, "sourceNumber");
+
+		if(jsonEnvelope.has("dataMessage")) {
+			JsonObject dataMessage = jsonEnvelope.get("dataMessage").getAsJsonObject();
+			String message = dataMessage.get("message").getAsString();
+
+			SignalMessage msg = new SignalMessage();
+			msg.setMessage(message);
+			msg.setSource(source.orElse("Unknown"));
+			msg.setSourceName(sourceName.orElse("Unknown"));
+			msg.setTimestamp(timestamp);
+
+			if(dataMessage.has("groupInfo")) {
+				JsonObject jsonGroupInfo = dataMessage.get("groupInfo").getAsJsonObject();
+				String groupId = jsonGroupInfo.has("groupId") ? jsonGroupInfo.get("groupId").getAsString() : null;
+				msg.setGroupId(groupId);
+			}
+
+			return msg;
+		} else if(jsonEnvelope.has("receiptMessage")) {
+			//TODO implement
+		} else if(jsonEnvelope.has("typingMessage")) {
+			//TODO: implement
+		}
+		
+		return null;
 	}
 
 	private static final Optional<String> getFieldString(JsonObject jsonObject, String field) {
@@ -294,6 +331,13 @@ public class SignalMessengerService extends AbstractControllerService implements
 				cacheIdentities.invalidateAll();
 			} catch (Throwable e) { }
     		cacheIdentities = null;
+    	}
+
+    	if(cacheGroups != null) {
+    		try {
+    			cacheGroups.invalidateAll();
+			} catch (Throwable e) { }
+    		cacheGroups = null;
     	}
 	}
 	
@@ -358,7 +402,23 @@ public class SignalMessengerService extends AbstractControllerService implements
 		if(cacheIdentities == null)
 			return Collections.emptyMap();
 		
-		return cacheIdentities.get(account);
+		Map<String, SignalIdentity> result = cacheIdentities.get(account);
+		if(result == null)
+			return Collections.emptyMap();
+		
+		return result;
+	}
+
+	@Override
+	public Map<String, SignalGroup> getGroups(String account) throws UnsupportedOperationException, IOException, ExecutionException {
+		if(cacheGroups == null)
+			return Collections.emptyMap();
+		
+		Map<String, SignalGroup> result = cacheGroups.get(account);
+		if(result == null)
+			return Collections.emptyMap();
+		
+		return result;
 	}
 	
 	private static final JsonObject getAccountParam(String account) {

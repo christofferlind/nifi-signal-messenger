@@ -9,6 +9,8 @@ public class SignalMessage {
 	
 	private long expires = -1;
 	private boolean viewOnce = false;
+	private String groupId = null;
+	
 	public String getAccount() {
 		return account;
 	}
@@ -50,5 +52,11 @@ public class SignalMessage {
 	}
 	public void setViewOnce(boolean viewOnce) {
 		this.viewOnce = viewOnce;
+	}
+	public void setGroupId(String groupId) {
+		this.groupId = groupId;
+	}
+	public String getGroupId() {
+		return groupId;
 	}
 }

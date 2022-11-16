@@ -31,6 +31,7 @@ import org.apache.nifi.processor.ProcessSessionFactory;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 
@@ -41,29 +42,30 @@ import org.signal.model.SignalMessage;
 @TriggerSerially
 @SeeAlso({PutSignalMessage.class})
 @WritesAttributes({
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT, description="Values true or false depending on if the message is a receipt or not"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT_DELIVERY, description="Values true or false depending on if the message is a receipt and if the receipt is a delivery or not"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT_READ, description="Values true or false depending on if the message is a receipt and if the receipt is a read-message or not"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT, description="Values true or false depending on if the message is a receipt or not"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT_DELIVERY, description="Values true or false depending on if the message is a receipt and if the receipt is a delivery or not"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT_READ, description="Values true or false depending on if the message is a receipt and if the receipt is a read-message or not"),
 
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_CALL_MESSAGE, description="true if it is a call"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_CALL_MESSAGE, description="true if it is a call"),
 	
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE, description="The content of the message sent"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, description="Values true or false depending on if the message is a view once message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP, description="Time when the message was sent"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message (this is the same as the one in the controller used)"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_ACCOUNT_NUMBER, description="The number that received the message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_VERIFIED, description="If the sender number is verified. One of: DEFAULT (trusted but not yet verified), VERIFIED (trusted and verified), UNVERIFIED (untrusted)"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_IDENTIFIED, description="If the sender number is identified"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_IDENTIFIED, description="If the sender number is identified"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute"),
 
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_TYPING_STARTED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_TYPING_STOPPED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_TYPING_STARTED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_TYPING_STOPPED, description="This attribute will be present if the ignore typing messages is set to false and the received message is a typing message"),
 	
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_EMOJI, description="If the data-message is a reaction, then this attribute will be populated with the unicode grapheme cluster"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, description="If the data-message is a reaction, then this attribute will be populated with the target author number"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, description="If the data-message is a reaction, then this attribute will be populated with the timestamp of the target message"),
 
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_QUOTE_ID, description="If the data-message contains a quote, then this attribute will be populated with the id (long)"),
+//	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_QUOTE_ID, description="If the data-message contains a quote, then this attribute will be populated with the id (long)"),
 
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_GROUP_ID, description="If the data-message is a message to a group, then this attribute will be populated with the base64 encoded group id"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, description="If the data-message is a message to a group, then this attribute will be populated with the title of the group"),
@@ -188,12 +190,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			return;
 		}
 		
-		Map<String, String> attributes = new HashMap<>(20);
+		Map<String, String> attributes = new HashMap<>(10);
 			
 		String account = message.getAccount();
 		String source = message.getSource();
 		
 		try {
+			attributes.put(Constants.ATTRIBUTE_ACCOUNT_NUMBER, 			message.getAccount());
+			attributes.put(Constants.ATTRIBUTE_RECEIVING_NUMBER, 		message.getAccount());
 			attributes.put(Constants.ATTRIBUTE_SENDER_NUMBER, 			source);
 			attributes.put(Constants.ATTRIBUTE_TIMESTAMP, 				Long.toString(message.getTimestamp()));
 			
@@ -220,6 +224,17 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			attributes.put(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(message.isViewOnce()));
 			attributes.put(Constants.ATTRIBUTE_MESSAGE, message.getMessage());
 
+			// ********************************
+			// Check group
+			// ********************************
+			String groupId = message.getGroupId();
+			if(groupId != null) {
+				attributes.put(Constants.ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
+				SignalGroup signalGroup = service.getGroups(groupId).get(groupId);
+				if(signalGroup != null) {
+					attributes.put(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, signalGroup.getName());
+				}
+			}
 			
 //			if(opTypingMessage.isPresent()) {
 //				SignalServiceTypingMessage typingMessage = opTypingMessage.get();

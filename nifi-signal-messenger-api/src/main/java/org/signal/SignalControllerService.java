@@ -9,6 +9,7 @@ import java.util.function.Consumer;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.controller.ControllerService;
+import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 
@@ -28,11 +29,13 @@ public interface SignalControllerService extends ControllerService {
 	public void removeMessageListener(Consumer<SignalMessage> messageListener);
 
 	public Map<String, SignalIdentity> getIdentities(String account) throws UnsupportedOperationException, IOException, ExecutionException;
+	public Map<String, SignalGroup> getGroups(String account) throws UnsupportedOperationException, IOException, ExecutionException;
 	
 	public JsonElement sendJsonRpc(String method, JsonObject params) throws UnsupportedOperationException, IOException; 	
 	public JsonElement sendJsonRpc(String method, Map<String, String> params) throws UnsupportedOperationException, IOException;
 	
 	public JsonElement sendJsonRpc(String method, Map<String, String> params, String msgId) throws UnsupportedOperationException, IOException;
 	public JsonElement sendJsonRpc(String method, JsonObject params, String msgId) throws UnsupportedOperationException, IOException;
+
 	
 }
