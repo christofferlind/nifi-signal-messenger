@@ -46,7 +46,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
@@ -283,6 +282,9 @@ public class SignalMessengerService extends AbstractControllerService implements
 			msg.setSource(source.orElse("Unknown"));
 			msg.setSourceName(sourceName.orElse("Unknown"));
 			msg.setTimestamp(timestamp);
+			msg.setAccount(jsonObject.get("account").getAsString());
+			msg.setViewOnce(dataMessage.get("viewOnce").getAsBoolean());
+			msg.setExpires(dataMessage.get("expiresInSeconds").getAsLong());
 
 			if(dataMessage.has("groupInfo")) {
 				JsonObject jsonGroupInfo = dataMessage.get("groupInfo").getAsJsonObject();
@@ -462,6 +464,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 		String payload = GSON.toJson(rpc);
 
 		URLConnection connection = urlRpc.openConnection();
+
+		// ************************
+		// Send request
+		// ************************
 		if(connection instanceof HttpURLConnection) {
 			HttpURLConnection httpConnection = (HttpURLConnection) connection;
 			httpConnection.setRequestMethod("POST");
@@ -472,37 +478,50 @@ public class SignalMessengerService extends AbstractControllerService implements
 				outputStream.write(payload.getBytes(StandardCharsets.UTF_8));
 				outputStream.flush();
 			}
-
+			
 			int response = httpConnection.getResponseCode();
-			if(response == HttpURLConnection.HTTP_OK) {
-				try(
-						InputStream inputStream = httpConnection.getInputStream();
-						InputStreamReader reader = new InputStreamReader(inputStream);
-						BufferedReader bufferedReader = new BufferedReader(reader);
-						){
-
-					JsonObject element = JsonParser.parseReader(bufferedReader).getAsJsonObject();
-					if(!element.has("jsonrpc") && !"2.0".equals(element.get("jsonrpc").getAsString())){
-						throw new UnsupportedOperationException("Unexpected answer from server: " + element.toString());
-					}
-
-					if(!msgId.equals(element.get("id").getAsString())){
-						throw new UnsupportedOperationException("Unexpected message id from server: " + element.toString() + " (should be: " + msgId + ")");
-					}
-					
-					//Check for error
-					if(element.has("error")) {
-						JsonObject jsonError = element.get("error").getAsJsonObject();
-						throw new UnsupportedOperationException(String.format("%s (ErrorCode: %s)", jsonError.get("message").getAsString(), jsonError.get("code").getAsLong()));
-					} else {
-						return element.get("result");
-					}
-				}
+			if(response != HttpURLConnection.HTTP_OK) {
+				throw new UnsupportedOperationException("Unexpected answer from server. Code: " + response);
 			}
 		} else {
-			throw new UnsupportedOperationException();
+			throw new UnsupportedOperationException("!?");
 		}
 
-		return JsonNull.INSTANCE;
+		// ************************
+		// Process response
+		// ************************
+		try(	InputStream inputStream = connection.getInputStream();
+				InputStreamReader reader = new InputStreamReader(inputStream);
+				BufferedReader bufferedReader = new BufferedReader(reader);
+				){
+
+			JsonObject element = JsonParser.parseReader(bufferedReader).getAsJsonObject();
+			assertIsJsonRpc(element);
+			assertCorrectMessageId(element, msgId);
+			assertNoError(element);
+			
+			return element.get("result");
+		}
+
+	}
+
+	private void assertNoError(JsonObject element) {
+		//Check for error
+		if(element.has("error")) {
+			JsonObject jsonError = element.get("error").getAsJsonObject();
+			throw new UnsupportedOperationException(String.format("%s (ErrorCode: %s)", jsonError.get("message").getAsString(), jsonError.get("code").getAsLong()));
+		}
+	}
+
+	private void assertCorrectMessageId(JsonObject element, String msgId) {
+		if(!msgId.equals(element.get("id").getAsString())){
+			throw new UnsupportedOperationException("Unexpected message id from server: " + element.toString() + " (should be: " + msgId + ")");
+		}
+	}
+
+	private void assertIsJsonRpc(JsonObject element) {
+		if(!element.has("jsonrpc") && !"2.0".equals(element.get("jsonrpc").getAsString())){
+			throw new UnsupportedOperationException("Unexpected answer from server: " + element.toString());
+		}
 	}
 }

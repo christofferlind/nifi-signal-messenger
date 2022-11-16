@@ -16,6 +16,11 @@
  */
 package org.signal;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
@@ -23,6 +28,7 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.signal.model.SignalMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,20 +61,38 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     }
 
     @Test
-    public void putMessage() {
+    public void putMessage() throws InterruptedException {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
 			return;
 		}
+    	
+    	String content = "Testing " + PutSignalMessage.class.getSimpleName() + Math.random();
+    	
+    	AtomicReference<String> refContent = new AtomicReference<String>(null);
+    	
+    	Consumer<SignalMessage> listener = msg -> {
+    		if(!numberB.equals(msg.getAccount()))
+    			return;
+    		
+    		refContent.set(msg.getMessage());
+    	};
+    	
+    	serviceA.addMessageListener(listener);
 
     	runner.clearTransferState();
     	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB);
-    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, "Testing " + PutSignalMessage.class.getSimpleName());
+    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
     	runner.setProperty(PutSignalMessage.SOURCE, numberA);
     	runner.enqueue(new byte[0]);
     	runner.run();
     	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	
+    	Thread.sleep(500);
+    	
+    	serviceA.removeMessageListener(listener);
+    	assertEquals(content, refContent.get());
     }
 
     @Test
