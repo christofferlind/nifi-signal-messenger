@@ -3,6 +3,7 @@ package org.signal;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -10,6 +11,9 @@ import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.controller.ControllerService;
 import org.signal.model.SignalIdentities;
 import org.signal.model.SignalMessage;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 @Tags({"Signal", "Messenger"})
 @CapabilityDescription("Signal Messenger API")
@@ -24,4 +28,11 @@ public interface SignalControllerService extends ControllerService {
 	public void removeMessageListener(Consumer<SignalMessage> messageListener);
 
 	public Collection<SignalIdentities> getIdentities(String account) throws UnsupportedOperationException, IOException;
+	
+	public JsonElement sendJsonRpc(String method, JsonObject params) throws UnsupportedOperationException, IOException; 	
+	public JsonElement sendJsonRpc(String method, Map<String, String> params) throws UnsupportedOperationException, IOException;
+	
+	public JsonElement sendJsonRpc(String method, Map<String, String> params, String msgId) throws UnsupportedOperationException, IOException;
+	public JsonElement sendJsonRpc(String method, JsonObject params, String msgId) throws UnsupportedOperationException, IOException;
+	
 }

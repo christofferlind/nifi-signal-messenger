@@ -58,7 +58,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private static final List<PropertyDescriptor> properties;
 	
-	private TypeToken<List<SignalIdentities>> gsonTypeListIdentities = testing;
+	private TypeToken<ArrayList<SignalIdentities>> gsonTypeListIdentities =  new TypeToken<ArrayList<SignalIdentities>>() {};
 	
 	private final static Gson GSON = new GsonBuilder().create();
 	
@@ -240,7 +240,123 @@ public class SignalMessengerService extends AbstractControllerService implements
 		getLogger().error(e.getMessage(), e);
 	}
 
-	private JsonElement sendJsonRPC(JsonObject rpc) throws IOException, UnsupportedOperationException {
+
+	@OnDisabled
+	public void onDisable() {
+		started = false;
+		if(receiveMessagesThread != null) {
+			try {
+				receiveMessagesThread.interrupt();
+			} catch (Exception e) {
+				getLogger().error(e.getMessage(), e);
+			}
+		}
+
+		synchronized (LOCK_LISTENERS) {
+			messageListeners.clear();
+			messageListenersLastMessage.clear();
+		}
+	}
+	
+	public boolean isStarted() {
+		return started;
+	}
+
+	@Override
+	public void sendMessage(String account, List<String> recipients, String message, Object attachment) throws IOException, UnsupportedOperationException {
+		JsonArray array = new JsonArray(recipients.size());
+		recipients.forEach(array::add);
+		
+		JsonObject jsonParams = new JsonObject();
+		jsonParams.add("recipient", array);
+		jsonParams.addProperty("message", message);
+		jsonParams.addProperty("account", account);
+		
+		sendJsonRpc("send", jsonParams);
+	}
+	
+
+	@Override
+	public void sendGroupMessage(String account, List<String> groups, String message, Object attachment) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void addMessageListener(Consumer<SignalMessage> listener) {
+		synchronized (LOCK_LISTENERS) {
+			messageListeners.add(Objects.requireNonNull(listener));
+
+			// For new listener, send all cached messages
+			Long lastMessageTimestamp = messageListenersLastMessage.get(listener.getClass().getCanonicalName());
+			var stream = messageQueue.stream();
+
+			if(lastMessageTimestamp != null)
+				stream = stream.filter(msg -> msg.getTimestamp() > lastMessageTimestamp);
+
+			stream.forEach(msg -> {
+				listener.accept(msg);
+				messageListenersLastMessage.put(listener.getClass().getCanonicalName(), msg.getTimestamp());
+			});
+		}
+	}
+
+	@Override
+	public void removeMessageListener(Consumer<SignalMessage> messageListener) {
+		synchronized (LOCK_LISTENERS) {
+			messageListeners.remove(Objects.requireNonNull(messageListener));
+		}
+	}
+	
+	private void notifyListeners(SignalMessage message) {
+		for (Consumer<SignalMessage> consumer : messageListeners) {
+			consumer.accept(message);
+		}
+	}
+
+	@Override
+	public Collection<SignalIdentities> getIdentities(String account) throws UnsupportedOperationException, IOException {
+		JsonElement responce = sendJsonRpc("listIdentities", getAccountParam(account));
+		List<SignalIdentities> result = GSON.fromJson(responce, gsonTypeListIdentities);
+		return result;
+	}
+	
+	private static final JsonObject getAccountParam(String account) {
+		JsonObject result = new JsonObject();
+		result.addProperty("account", account);
+		return result;
+	}
+
+	public JsonElement sendJsonRpc(String method, JsonObject params) throws UnsupportedOperationException, IOException {
+		return sendJsonRpc(method, params, null);
+	}
+	
+	public JsonElement sendJsonRpc(String method, Map<String, String> params) throws UnsupportedOperationException, IOException {
+		return sendJsonRpc(method, params, null);
+	}
+	
+	public JsonElement sendJsonRpc(String method, Map<String, String> params, String msgId) throws UnsupportedOperationException, IOException {
+		JsonObject jsonParams = new JsonObject();
+		params.forEach(jsonParams::addProperty);
+		return sendJsonRpc(method, jsonParams, msgId);
+	}
+	
+	public JsonElement sendJsonRpc(String method, JsonObject params, String msgId) throws UnsupportedOperationException, IOException {
+		JsonObject rpc = new JsonObject();
+		
+		if(msgId != null)
+			rpc.addProperty("id", msgId);
+		else
+			rpc.add("id", JsonNull.INSTANCE);
+		
+		rpc.addProperty("jsonrpc", "2.0");
+		rpc.addProperty("method", method);
+		rpc.add("params", Objects.requireNonNull(params));
+		
+		return internalSend(rpc);
+	}
+
+	private JsonElement internalSend(JsonObject rpc) throws IOException, UnsupportedOperationException {
 		String payload = GSON.toJson(rpc);
 
 		URLConnection connection = urlRpc.openConnection();
@@ -283,99 +399,4 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 		return JsonNull.INSTANCE;
 	}
-
-	@OnDisabled
-	public void onDisable() {
-		started = false;
-		if(receiveMessagesThread != null) {
-			try {
-				receiveMessagesThread.interrupt();
-			} catch (Exception e) {
-				getLogger().error(e.getMessage(), e);
-			}
-		}
-
-		synchronized (LOCK_LISTENERS) {
-			messageListeners.clear();
-			messageListenersLastMessage.clear();
-		}
-	}
-	
-	public boolean isStarted() {
-		return started;
-	}
-
-	@Override
-	public void sendMessage(String account, List<String> recipients, String message, Object attachment) throws IOException, UnsupportedOperationException {
-		JsonArray array = new JsonArray(recipients.size());
-		recipients.forEach(array::add);
-		
-		JsonObject jsonParams = new JsonObject();
-		jsonParams.add("recipient", array);
-		jsonParams.addProperty("message", message);
-		jsonParams.addProperty("account", account);
-		
-		JsonObject rpc = new JsonObject();
-		rpc.addProperty("id", 42);
-		rpc.addProperty("jsonrpc", "2.0");
-		rpc.addProperty("method", "send");
-		rpc.add("params", jsonParams);
-		
-		sendJsonRPC(rpc);
-	}
-
-	@Override
-	public void sendGroupMessage(String account, List<String> groups, String message, Object attachment) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void addMessageListener(Consumer<SignalMessage> listener) {
-		synchronized (LOCK_LISTENERS) {
-			messageListeners.add(Objects.requireNonNull(listener));
-
-			// For new listener, send all cached messages
-			Long lastMessageTimestamp = messageListenersLastMessage.get(listener.getClass().getCanonicalName());
-			var stream = messageQueue.stream();
-
-			if(lastMessageTimestamp != null)
-				stream = stream.filter(msg -> msg.getTimestamp() > lastMessageTimestamp);
-
-			stream.forEach(msg -> {
-				listener.accept(msg);
-				messageListenersLastMessage.put(listener.getClass().getCanonicalName(), msg.getTimestamp());
-			});
-		}
-	}
-
-	@Override
-	public void removeMessageListener(Consumer<SignalMessage> messageListener) {
-		synchronized (LOCK_LISTENERS) {
-			messageListeners.remove(Objects.requireNonNull(messageListener));
-		}
-	}
-	
-	private void notifyListeners(SignalMessage message) {
-		for (Consumer<SignalMessage> consumer : messageListeners) {
-			consumer.accept(message);
-		}
-	}
-
-	@Override
-	public Collection<SignalIdentities> getIdentities(String account) throws UnsupportedOperationException, IOException {
-		JsonObject params = new JsonObject();
-		params.addProperty("account", account);
-		
-		JsonObject json = new JsonObject();
-		json.addProperty("jsonrpc", "2.0");
-		json.addProperty("method", "listIdentities");
-		json.addProperty("id", 345);
-		json.add("params", params);
-		
-		JsonElement responce = sendJsonRPC(json);
-		List<SignalIdentities> result = GSON.fromJson(responce, gsonTypeListIdentities);
-		return result;
-	}
-
 }

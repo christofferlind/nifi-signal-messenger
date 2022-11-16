@@ -1,7 +1,6 @@
 package org.signal;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,7 +31,6 @@ import org.apache.nifi.processor.ProcessSessionFactory;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
-import org.signal.model.SignalIdentities;
 import org.signal.model.SignalMessage;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
@@ -123,7 +121,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
 
 	private volatile Consumer<SignalMessage> messageListener;
-
+	
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
@@ -149,8 +147,6 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     @OnScheduled
     public void onScheduled(ProcessContext context) throws ProcessException {
     	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-    	
-    	Collection<SignalIdentities> idents = service.getIdentities();
     }
     
     private void onError(Throwable e) {
