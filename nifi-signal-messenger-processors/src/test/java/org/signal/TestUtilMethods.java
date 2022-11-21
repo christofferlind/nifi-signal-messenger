@@ -1,6 +1,27 @@
 package org.signal;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
 public class TestUtilMethods {
+    public static final String getAndWait(AtomicReference<String> refContent) throws InterruptedException {
+    	Instant maxWait = Instant.now().plus(5, ChronoUnit.SECONDS);
+    	while(!Thread.currentThread().isInterrupted()) {
+    		String result = refContent.get();
+    		if(result != null)
+    			return result;
+    		
+    		Thread.sleep(101);
+    		
+    		if(Instant.now().isAfter(maxWait))
+    			break;
+    	}
+    	
+    	return null;
+	}
+
+
     
 //	@Test
 //    public void testSplitComma() {

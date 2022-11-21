@@ -1,5 +1,7 @@
 package org.signal.model;
 
+import java.util.List;
+
 import com.google.gson.annotations.SerializedName;
 
 public class SignalGroup {
@@ -23,6 +25,9 @@ public class SignalGroup {
 
 	@SerializedName("permissionSendMessage")
 	private String permissionSendMessage;
+
+	@SerializedName("members")
+	private List<SignalGroupMember> members;
 	
 	@Override
 	public String toString() {
@@ -83,5 +88,9 @@ public class SignalGroup {
 
 	public void setPermissionSendMessage(String permissionSendMessage) {
 		this.permissionSendMessage = permissionSendMessage;
+	}
+	
+	public List<SignalGroupMember> getMembers() {
+		return members;
 	}
 }

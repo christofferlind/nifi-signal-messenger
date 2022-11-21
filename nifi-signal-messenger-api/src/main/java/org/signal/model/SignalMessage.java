@@ -10,6 +10,7 @@ public class SignalMessage {
 	private long expires = -1;
 	private boolean viewOnce = false;
 	private String groupId = null;
+	private String groupName;
 	
 	public String getAccount() {
 		return account;
@@ -63,5 +64,13 @@ public class SignalMessage {
 	@Override
 	public String toString() {
 		return String.format("Msg from %s to %s", getSource(), getAccount());
+	}
+	
+	public void setGroupName(String groupName) {
+		this.groupName = groupName;
+	}
+	
+	public String getGroupName() {
+		return groupName;
 	}
 }

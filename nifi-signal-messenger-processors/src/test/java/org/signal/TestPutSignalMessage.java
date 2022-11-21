@@ -2,6 +2,7 @@ package org.signal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -52,7 +53,7 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
 			return;
 		}
     	
-    	String content = "Testing " + PutSignalMessage.class.getSimpleName() + Math.random();
+    	String content = "Testing " + TestPutSignalMessage.class.getSimpleName() + " " + Math.random();
     	
     	AtomicReference<String> refContent = new AtomicReference<String>(null);
     	
@@ -71,15 +72,49 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	runner.setProperty(PutSignalMessage.SOURCE, numberA);
     	runner.enqueue(new byte[0]);
     	runner.run();
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
-    	
-    	Thread.sleep(500);
-    	
+
+    	String result = TestUtilMethods.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
-    	assertEquals(content, refContent.get());
+    	
+    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	assertEquals(content, result);
+    }
+	
+    @Test
+    public void putMessageContent() throws InterruptedException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+    	
+    	String content = "Testing " + TestPutSignalMessage.class.getSimpleName() + " " + Math.random();
+    	
+    	AtomicReference<String> refContent = new AtomicReference<String>(null);
+    	
+    	Consumer<SignalMessage> listener = msg -> {
+    		if(!numberB.equals(msg.getAccount()))
+    			return;
+    		
+    		refContent.set(msg.getMessage());
+    	};
+    	
+    	serviceA.addMessageListener(listener);
+
+    	runner.clearTransferState();
+    	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB);
+    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
+    	runner.run();
+
+    	String result = TestUtilMethods.getAndWait(refContent);
+    	serviceA.removeMessageListener(listener);
+    	
+    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	assertEquals(content, result);
     }
 
-    @Test
+	@Test
     public void putMessageFail() {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
@@ -96,5 +131,6 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	MockFlowFile ff = runner.getFlowFilesForRelationship(PutSignalMessage.FAILURE).get(0);
     	ff.assertAttributeEquals(Constants.ATTRIBUTE_ERROR_MESSAGE, "Specified account does not exist (ErrorCode: -32602)");
     }
+
 
 }

@@ -32,8 +32,10 @@ import org.apache.nifi.annotation.lifecycle.OnEnabled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
+import org.signal.model.SignalAttachment;
 import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
@@ -126,7 +128,7 @@ public class SignalMessengerService extends AbstractControllerService implements
     				result.stream().collect(Collectors.toMap(
 	    				SignalGroup::getId, 
 	    				Function.identity(), 
-	    				(a,b) -> a) // This will ignore any duplicates. Will listIdentities ever return the same number twice?!
+	    				(a,b) -> a) // This will ignore any duplicates
 	    				);
     		
     		return groups;
@@ -264,6 +266,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 			getLogger().error(exc.getMessage(), exc);
 			return null;
 		}
+		
+		String account = jsonObject.get("account").getAsString();
 
 		JsonObject jsonEnvelope = jsonObject.get("envelope").getAsJsonObject();
 		if(!jsonEnvelope.has("timestamp")) {
@@ -285,7 +289,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 			msg.setSource(source.orElse("Unknown"));
 			msg.setSourceName(sourceName.orElse("Unknown"));
 			msg.setTimestamp(timestamp);
-			msg.setAccount(jsonObject.get("account").getAsString());
+			msg.setAccount(account);
 			msg.setViewOnce(dataMessage.get("viewOnce").getAsBoolean());
 			msg.setExpires(dataMessage.get("expiresInSeconds").getAsLong());
 
@@ -293,6 +297,17 @@ public class SignalMessengerService extends AbstractControllerService implements
 				JsonObject jsonGroupInfo = dataMessage.get("groupInfo").getAsJsonObject();
 				String groupId = jsonGroupInfo.has("groupId") ? jsonGroupInfo.get("groupId").getAsString() : null;
 				msg.setGroupId(groupId);
+				
+				//Try to load the group name
+				try {
+					Map<String, SignalGroup> groups = getGroups(account);
+					SignalGroup signalGroup = groups.get(groupId);
+					if(signalGroup != null)
+						msg.setGroupName(signalGroup.getName());
+				} catch (Exception e) {
+					ComponentLog log = getLogger();
+					if(log.isErrorEnabled()) log.error(e.getMessage(), e);
+				}
 			}
 
 			return msg;
@@ -353,23 +368,73 @@ public class SignalMessengerService extends AbstractControllerService implements
 	}
 
 	@Override
-	public void sendMessage(String account, List<String> recipients, String message, Object attachment) throws IOException, UnsupportedOperationException {
+	public void sendMessage(String account, List<String> recipients, String message, SignalAttachment attachment) throws IOException, UnsupportedOperationException {
 		JsonArray array = new JsonArray(recipients.size());
 		recipients.forEach(array::add);
 		
 		JsonObject jsonParams = new JsonObject();
 		jsonParams.add("recipient", array);
-		jsonParams.addProperty("message", message);
-		jsonParams.addProperty("account", account);
 		
-		sendJsonRpc("send", jsonParams);
+		sendMessage(account, message, jsonParams, attachment);
+	}
+	
+	private void logWarn(String message) {
+		ComponentLog log = getLogger();
+		
+		if(!log.isWarnEnabled())
+			return;
+		
+		log.warn(message);
+	}
+	
+	private void logError(Exception e) {
+		ComponentLog log = getLogger();
+		
+		if(!log.isErrorEnabled())
+			return;
+		
+		log.error(e.getMessage(), e);
 	}
 	
 
 	@Override
-	public void sendGroupMessage(String account, List<String> groups, String message, Object attachment) {
-		// TODO Auto-generated method stub
+	public void sendGroupMessage(String account, List<String> groups, String message, SignalAttachment attachment) throws UnsupportedOperationException, IOException, ExecutionException {
+		Map<String, SignalGroup> groupIds = getGroups(account);
+		if(groupIds == null || groupIds.isEmpty()) {
+			logError(new IllegalStateException("No groups found for account: " + account));
+			return;
+		}
 		
+		Collection<SignalGroup> groupInformation = groupIds.values();
+		
+		for (String groupName : groups) {
+			Optional<SignalGroup> group = groupInformation
+					.stream()
+					.filter(gi -> gi.getName().equalsIgnoreCase(groupName))
+					.findAny();
+			
+			if(group.isEmpty()) {
+				logWarn("Could not find group id for group with name: \"" + groupName +"\"");
+				continue;
+			}
+			
+			SignalGroup g = group.get();
+			JsonObject jsonParams = new JsonObject();
+			jsonParams.addProperty("group-id", g.getId());
+
+			sendMessage(account, message, jsonParams, attachment);
+		}
+	}
+	
+	public void sendMessage(String account, String message, JsonObject jsonParams, SignalAttachment attachment) throws UnsupportedOperationException, IOException {
+		jsonParams.addProperty("message", message);
+		jsonParams.addProperty("account", account);
+
+		if(attachment != null) {
+			jsonParams.addProperty("attachment", attachment.toString());
+		}
+		
+		sendJsonRpc("send", jsonParams);
 	}
 
 	@Override
@@ -505,7 +570,6 @@ public class SignalMessengerService extends AbstractControllerService implements
 			
 			return element.get("result");
 		}
-
 	}
 
 	private void assertNoError(JsonObject element) {

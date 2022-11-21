@@ -1,14 +1,13 @@
 package org.signal;
 
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +23,8 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -31,6 +32,7 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.signal.model.SignalAttachment;
 
 @Tags({ "Signal", "Put", "Message", "Send" })
 @CapabilityDescription("Sends a message on Signal, with or without attachment")
@@ -168,16 +170,15 @@ public class PutSignalMessage extends AbstractProcessor {
 			if(groups.isEmpty() && recipients.isEmpty())
 				throw new IllegalStateException("Both groups and recipients can not be empty. At least one must be set");
 				
-//			SignalServiceAttachmentStream attachment = null;
+			SignalAttachment attachment = null;
 
 			if(useAttachment) {
-//				attachment = loadFlowFileContentAsAttachment(session, flowFile);
+				attachment = loadFlowFileContentAsBase64(session, flowFile);
 			} else {
 				if(messageContent == null || messageContent.isEmpty()) {
 					try {
 						getLogger().info("Message is empty, using content as message");
-						StringBuilder content = loadFlowFileContentAsMessageContent(session, flowFile);
-						messageContent = content.toString();
+						messageContent = loadFlowFileContentAsMessageContent(session, flowFile);
 					} catch (Throwable e) {
 						getLogger().error(e.getMessage(), e);
 						session.transfer(flowFile, FAILURE);
@@ -188,28 +189,16 @@ public class PutSignalMessage extends AbstractProcessor {
 
 			//Try send to all groups
 			if(groups.size() > 0) {
-				signalService.sendGroupMessage(source, groups, messageContent, null);
+				signalService.sendGroupMessage(source, groups, messageContent, attachment);
 			}
 
 			//Try send to all recipients
 			if(recipients.size() > 0) {
-				signalService.sendMessage(source, recipients, messageContent, null);
+				signalService.sendMessage(source, recipients, messageContent, attachment);
 			}
 			
-			boolean allOk = true;
-//			for (SendMessageResult result : results) {
-//				if(result.getSuccess() == null || result.isNetworkFailure() || result.isUnregisteredFailure()) {
-//					allOk = false;
-//					transferFailedFlowFile(session, flowFile, result);
-//				}
-//			}
-			
-			if(allOk) {
-				session.transfer(flowFile, SUCCESS);
-			} else {
-				session.putAttribute(flowFile, "signal.send.failed", Boolean.toString(true));
-				session.transfer(flowFile, SUCCESS);
-			}
+			session.putAttribute(flowFile, "signal.send.failed", Boolean.toString(true));
+			session.transfer(flowFile, SUCCESS);
 		} catch(Throwable e) {
 			getLogger().error(e.getMessage(), e);
 			transferToFailureWithMessage(session, flowFile, e.getMessage());
@@ -228,68 +217,29 @@ public class PutSignalMessage extends AbstractProcessor {
 		session.transfer(session.putAllAttributes(flowFile, attributes), FAILURE);		
 	}
 
-	private void transferFailedFlowFile(final ProcessSession session, FlowFile flowFile, Object result) {
-		FlowFile failed = session.clone(flowFile);
+	private SignalAttachment loadFlowFileContentAsBase64(ProcessSession session, FlowFile flowFile) throws IOException {
+		String mimeType = flowFile.getAttribute(CoreAttributes.MIME_TYPE.key());
+		String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
 		
-		Map<String, String> attribs = new HashMap<>();
-		
-//		Optional<String> number = result.getAddress().getNumber();
-//
-//		boolean failedNetwork = result.isNetworkFailure();
-//		boolean failedUnregistered = result.isUnregisteredFailure();
-//		IdentityFailure failedIdentity = result.getIdentityFailure();
+		if(mimeType == null || mimeType.isEmpty()) {
+			throw new NullPointerException("mime.type attribute can not be empty");
+		}
 
-//		attribs.put("signal.send.failed.number", number.or("UNKNOWN"));
-//		attribs.put("signal.send.failed.network", Boolean.toString(failedNetwork));
-//		attribs.put("signal.send.failed.unregistered", Boolean.toString(failedUnregistered));
-//		attribs.put("signal.send.failed.identity", failedIdentity == null ? "" : failedIdentity.getIdentityKey().getFingerprint());
-		
-		failed = session.putAllAttributes(failed, attribs);
-		session.transfer(failed, FAILURE);
+		ComponentLog log = getLogger();
+		if(log.isDebugEnabled()) log.debug("Mime type: " + mimeType);
+
+		try(ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+				OutputStream base64Output = Base64.getEncoder().wrap(outputStream)){
+
+			session.read(flowFile, inputStream -> copy(inputStream, base64Output));
+			
+			if(log.isDebugEnabled()) log.debug("Flowfile content read");
+			
+			String content = outputStream.toString(StandardCharsets.UTF_8);
+			return new SignalAttachment(mimeType, filename, content);
+		}
 	}
 
-
-//	private SignalServiceAttachmentStream loadFlowFileContentAsAttachment(ProcessSession session, FlowFile flowFile) {
-//		String mimeType = flowFile.getAttribute(CoreAttributes.MIME_TYPE.key());
-//		String filename = flowFile.getAttribute(CoreAttributes.FILENAME.key());
-//		
-//		if(mimeType == null || mimeType.isEmpty()) {
-//			throw new NullPointerException("mime.type attribute can not be empty");
-//		}
-//
-//		getLogger().debug("Mime type: " + mimeType);
-//
-//		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-//		session.read(flowFile, inputStream -> copy(inputStream, outputStream));
-//
-//		getLogger().debug("Flowfile content read");
-//
-//		Optional<byte[]> preview = Optional.absent();
-//		Optional<String> caption = Optional.absent();
-//		Optional<String> blurHash = Optional.absent();
-//		
-//		Optional<ResumableUploadSpec> resumableUploadSpec = Optional.absent();
-//
-//		final long uploadTimestamp = System.currentTimeMillis();
-//
-//		return new SignalServiceAttachmentStream(
-//				new ByteArrayInputStream(outputStream.toByteArray()), 
-//				mimeType, 
-//				(long) outputStream.size(), 
-//				Optional.of(filename), 
-//				false, 
-//				false,
-//				preview, 
-//				0, 
-//				0, 
-//				uploadTimestamp,
-//				caption, 
-//				blurHash, 
-//				null,
-//				null,
-//				resumableUploadSpec);
-//	}
-//
 	public static final List<String> getCommaSeparatedList(String string) {
 		if(string == null)
 			return Collections.emptyList();
@@ -306,21 +256,12 @@ public class PutSignalMessage extends AbstractProcessor {
 		return recipients;
 	}
 
-	private StringBuilder loadFlowFileContentAsMessageContent(final ProcessSession session, FlowFile flowFile) {
-		StringBuilder content = new StringBuilder();
-
-		session.read(flowFile, inputstream -> {
-			try(
-					InputStreamReader streamReader = new InputStreamReader(inputstream, Charset.forName("UTF8"));
-					BufferedReader bufferedReader = new BufferedReader(streamReader);
-					){
-				String line = null;
-				while((line = bufferedReader.readLine()) != null) {
-					content.append(line).append("\n");
-				}
-			}
-		});
-		return content;
+	private String loadFlowFileContentAsMessageContent(final ProcessSession session, FlowFile flowFile) throws IOException {
+	    try(	ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+	    		InputStream inputStream = session.read(flowFile)){
+	    	copy(inputStream, outputStream);
+	    	return new String(outputStream.toByteArray(), StandardCharsets.UTF_8);
+	    }
 	}
 	private static final int BUF_SIZE = 0x1000; // 4K
 

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.reporting.InitializationException;
@@ -95,7 +96,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     }
 
     @Test
-    public void consumeGroupMessage() throws ProcessException, InvocationTargetException, IOException, InterruptedException {
+    public void consumeGroupMessage() throws ProcessException, InvocationTargetException, IOException, InterruptedException, UnsupportedOperationException, ExecutionException {
     	if(isSettingsEmpty() || TEST_GROUP == null || TEST_GROUP.isBlank()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
