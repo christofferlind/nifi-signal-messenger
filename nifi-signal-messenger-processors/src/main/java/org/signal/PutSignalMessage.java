@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -33,6 +34,7 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.signal.model.SignalAttachment;
+import org.signal.model.SignalQuote;
 
 @Tags({ "Signal", "Put", "Message", "Send" })
 @CapabilityDescription("Sends a message on Signal, with or without attachment")
@@ -55,7 +57,7 @@ public class PutSignalMessage extends AbstractProcessor {
 	public static final PropertyDescriptor GROUPS = new PropertyDescriptor
 			.Builder().name("groups")
 			.displayName("Groups")
-			.description("You can either specify the group title or the base64 encoded id. Multiple groups can be provided using comma (,)")
+			.description("You can either specify the group title or the base64 encoded id (see: " + Constants.ATTRIBUTE_MESSAGE_GROUP_ID + "and" + Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE + "). Multiple groups can be provided using comma (,)")
 			.required(false)
 			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
@@ -99,6 +101,37 @@ public class PutSignalMessage extends AbstractProcessor {
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.build();
 
+	public static final PropertyDescriptor MESSAGE_QUOTE = new PropertyDescriptor
+			.Builder().name("Quote")
+			.displayName("Quote")
+			.description("")
+			.required(false)
+			.defaultValue(Boolean.FALSE.toString())
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
+
+	public static final PropertyDescriptor MESSAGE_QUOTE_TIMESTAMP_ATTRIBUTE = new PropertyDescriptor
+			.Builder().name("QuoteTimestampAttribute")
+			.displayName("Quote timestamp")
+			.description("Attribute on the flowfile that contains the message timestamp to quote")
+			.required(false)
+			.defaultValue(Constants.ATTRIBUTE_TIMESTAMP)
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
+
+	public static final PropertyDescriptor MESSAGE_QUOTE_AUTHOR_ATTRIBUTE = new PropertyDescriptor
+			.Builder().name("QuoteAuthorAttribute")
+			.displayName("Quote author")
+			.description("Attribute on the flowfile that contains the author number to quote")
+			.required(false)
+			.defaultValue(Constants.ATTRIBUTE_SENDER_NUMBER)
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
+
+
 	public static final Relationship SUCCESS = new Relationship.Builder()
 			.name("success")
 			.description("Successful send")
@@ -122,6 +155,9 @@ public class PutSignalMessage extends AbstractProcessor {
 		descriptors.add(GROUPS);
 		descriptors.add(MESSAGE_CONTENT);
 		descriptors.add(ATTACHMENT);
+		descriptors.add(MESSAGE_QUOTE);
+		descriptors.add(MESSAGE_QUOTE_TIMESTAMP_ATTRIBUTE);
+		descriptors.add(MESSAGE_QUOTE_AUTHOR_ATTRIBUTE);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -161,6 +197,11 @@ public class PutSignalMessage extends AbstractProcessor {
 		String useAttachmentString = context.getProperty(ATTACHMENT).evaluateAttributeExpressions(flowFile).getValue();
 		boolean useAttachment = "true".equalsIgnoreCase(useAttachmentString);
 
+		String useQuoteString = context.getProperty(MESSAGE_QUOTE).evaluateAttributeExpressions(flowFile).getValue();
+		boolean useQuote = "true".equalsIgnoreCase(useQuoteString);
+		
+		SignalQuote quote = null;
+
 		getLogger().debug("Using attachments: " + useAttachment);
 
 		try {
@@ -168,7 +209,7 @@ public class PutSignalMessage extends AbstractProcessor {
 			List<String> recipients = getCommaSeparatedList(recipientsString);
 			
 			if(groups.isEmpty() && recipients.isEmpty())
-				throw new IllegalStateException("Both groups and recipients can not be empty. At least one must be set");
+				throw new IllegalStateException(Constants.MSG_MISSING_RECIPIENT_AND_GROUP);
 				
 			SignalAttachment attachment = null;
 
@@ -176,33 +217,46 @@ public class PutSignalMessage extends AbstractProcessor {
 				attachment = loadFlowFileContentAsBase64(session, flowFile);
 			} else {
 				if(messageContent == null || messageContent.isEmpty()) {
-					try {
-						getLogger().info("Message is empty, using content as message");
-						messageContent = loadFlowFileContentAsMessageContent(session, flowFile);
-					} catch (Throwable e) {
-						getLogger().error(e.getMessage(), e);
-						session.transfer(flowFile, FAILURE);
-						return;
-					}
+					getLogger().info("Message is empty, using content as message");
+					messageContent = loadFlowFileContentAsMessageContent(session, flowFile);
 				}
 			}
-
-			//Try send to all groups
-			if(groups.size() > 0) {
-				signalService.sendGroupMessage(source, groups, messageContent, attachment);
-			}
-
-			//Try send to all recipients
-			if(recipients.size() > 0) {
-				signalService.sendMessage(source, recipients, messageContent, attachment);
-			}
 			
-			session.putAttribute(flowFile, "signal.send.failed", Boolean.toString(true));
+			if(useQuote) {
+				quote = createQuote(context, flowFile, messageContent);
+			}
+
+			signalService.sendMessage(source, 
+					messageContent, 
+					Optional.ofNullable(recipients), 
+					Optional.ofNullable(groups), 
+					Optional.ofNullable(quote), 
+					Optional.ofNullable(attachment));
+			
+			session.putAttribute(flowFile, "signal.send.failed", Boolean.toString(Boolean.FALSE));
 			session.transfer(flowFile, SUCCESS);
 		} catch(Throwable e) {
 			getLogger().error(e.getMessage(), e);
 			transferToFailureWithMessage(session, flowFile, e.getMessage());
 		}
+	}
+
+	private SignalQuote createQuote(final ProcessContext context, FlowFile flowFile, String messageContent) {
+		SignalQuote quote = null;
+		
+		try {
+			String attrTimestamp = context.getProperty(MESSAGE_QUOTE_TIMESTAMP_ATTRIBUTE).evaluateAttributeExpressions(flowFile).getValue();
+			long timestamp = Long.decode(flowFile.getAttribute(attrTimestamp));
+
+			String attrAuthor = context.getProperty(MESSAGE_QUOTE_AUTHOR_ATTRIBUTE).evaluateAttributeExpressions(flowFile).getValue();
+			String author = flowFile.getAttribute(attrAuthor);
+
+			quote = new SignalQuote(timestamp, author, messageContent, null);
+		} catch (Exception e) {
+			logError(e);
+		}
+
+		return quote;
 	}
 
 	private void transferToFailureWithMessage(ProcessSession session, FlowFile flowFile, String message) {
@@ -280,4 +334,14 @@ public class PutSignalMessage extends AbstractProcessor {
 		}
 		return total;
 	}
+	
+	private void logError(Exception e) {
+		ComponentLog log = getLogger();
+		
+		if(!log.isErrorEnabled())
+			return;
+		
+		log.error(e.getMessage(), e);
+	}
+	
 }

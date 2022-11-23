@@ -1,5 +1,8 @@
 package org.signal;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +54,7 @@ import org.signal.model.SignalMessage;
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE, description="The content of the message sent"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, description="Values true or false depending on if the message is a view once message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP, description="Time when the message was sent"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP_STRING, description="Time when the message was sent (pretty printed to local time)"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_ACCOUNT_NUMBER, description="The number that received the message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message"),
@@ -81,24 +85,8 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .identifiesControllerService(SignalControllerService.class)
             .build();
 
-//	public static final PropertyDescriptor IGNORE_RECEIPT_MESSAGE = new PropertyDescriptor
-//            .Builder().name("ReceiptMessages")
-//            .displayName("Ignore receipts")
-//            .description("Don't transfer any receipt messages")
-//            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
-//            .defaultValue(Boolean.toString(Boolean.TRUE))
-//            .build();
-//
-//	public static final PropertyDescriptor IGNORE_TYPING_MESSAGE = new PropertyDescriptor
-//            .Builder().name("TypingMessages")
-//            .displayName("Ignore typing messages")
-//            .description("Don't transfer any typing messages")
-//            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
-//            .defaultValue(Boolean.toString(Boolean.TRUE))
-//            .build();
-
-	public static final PropertyDescriptor IGNORE_TRUSTED_SENDER = new PropertyDescriptor
-            .Builder().name("IgnoreTrustedSender")
+	public static final PropertyDescriptor IGNORE_UNTRUSTED_SENDER = new PropertyDescriptor
+            .Builder().name("IgnoreUntrustedSender")
             .displayName("Ignore untrusted sender")
             .description("If set to to true then only messages sent by a trusted sender identity (at least one) is transfered to success relationship.")
             .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
@@ -114,6 +102,8 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .name("failure")
             .description("Unsuccessful send")
             .build();
+
+	private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private List<PropertyDescriptor> descriptors;
 
@@ -131,7 +121,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
         descriptors.add(SIGNAL_SERVICE);
-        descriptors.add(IGNORE_TRUSTED_SENDER);
+        descriptors.add(IGNORE_UNTRUSTED_SENDER);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -153,7 +143,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     @OnScheduled
     public void onScheduled(ProcessContext context) throws ProcessException {
     	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-    	ignoreUntrustedMessages = context.getProperty(IGNORE_TRUSTED_SENDER).asBoolean();
+    	ignoreUntrustedMessages = context.getProperty(IGNORE_UNTRUSTED_SENDER).asBoolean();
     }
     
     private void onError(Throwable e) {
@@ -174,7 +164,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 	@Override
 	public void onTrigger(ProcessContext context, ProcessSessionFactory sessionFactory) throws ProcessException {
     	sessionFactoryReference.compareAndSet(null, sessionFactory);
-    	
+
     	if(messageListener == null) {
 	    	messageListener = this::handleMessage;
 	    	service.addMessageListener(messageListener);
@@ -200,6 +190,15 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			attributes.put(Constants.ATTRIBUTE_RECEIVING_NUMBER, 		message.getAccount());
 			attributes.put(Constants.ATTRIBUTE_SENDER_NUMBER, 			source);
 			attributes.put(Constants.ATTRIBUTE_TIMESTAMP, 				Long.toString(message.getTimestamp()));
+			
+			try {
+				Instant timestamp = Instant.ofEpochMilli(message.getTimestamp());
+				attributes.put(Constants.ATTRIBUTE_TIMESTAMP_STRING, 	DATE_FORMAT.format(timestamp));
+			} catch (Throwable e) {
+				ComponentLog log = getLogger();
+				if(log.isErrorEnabled()) log.error(e.getMessage(), e);
+			}
+			
 			
 			// ********************************
 			// Set verification attribute
@@ -230,7 +229,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			String groupId = message.getGroupId();
 			if(groupId != null) {
 				attributes.put(Constants.ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
-				SignalGroup signalGroup = service.getGroups(groupId).get(groupId);
+				SignalGroup signalGroup = service.getGroups(account).get(groupId);
 				if(signalGroup != null) {
 					attributes.put(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, signalGroup.getName());
 				}

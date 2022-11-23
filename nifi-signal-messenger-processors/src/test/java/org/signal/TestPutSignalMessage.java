@@ -1,8 +1,10 @@
 package org.signal;
 
+import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -12,6 +14,7 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.signal.model.SignalMessage;
 import org.slf4j.Logger;
@@ -73,13 +76,36 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	runner.enqueue(new byte[0]);
     	runner.run();
 
-    	String result = TestUtilMethods.getAndWait(refContent);
+    	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
     	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
     	assertEquals(content, result);
     }
-	
+
+    @Test
+    public void testNoRecipietsNoGroup() throws InterruptedException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+    	
+    	String content = "Testing " + TestPutSignalMessage.class.getSimpleName() + " " + Math.random();
+    	
+    	runner.clearTransferState();
+    	runner.setProperty(PutSignalMessage.RECIPIENTS, "");
+    	runner.setProperty(PutSignalMessage.GROUPS, "");
+    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
+    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.enqueue(new byte[0]);
+    	runner.run();
+
+    	runner.assertAllFlowFilesTransferred(PutSignalMessage.FAILURE, 1);
+    	MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutSignalMessage.FAILURE).get(0);
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_ERROR_MESSAGE, Constants.MSG_MISSING_RECIPIENT_AND_GROUP);
+    }
+
     @Test
     public void putMessageContent() throws InterruptedException {
     	if(isSettingsEmpty()) {
@@ -107,11 +133,50 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
     	runner.run();
 
-    	String result = TestUtilMethods.getAndWait(refContent);
+    	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
     	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
     	assertEquals(content, result);
+    }
+
+    @Test
+    @Ignore("Manual testing")
+    public void putMessageReply() throws InterruptedException, InitializationException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+    	
+        TestRunner runnerConsume = TestRunners.newTestRunner(ConsumeSignalMessage.class);
+
+        setSignaleService(runnerConsume);
+        runnerConsume.setProperty(ConsumeSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runnerConsume.enableControllerService(serviceA);
+        assertTrue(runnerConsume.isControllerServiceEnabled(serviceA));
+        
+        runnerConsume.setRunSchedule(1_000);
+        runnerConsume.run(5);
+    	
+        runnerConsume.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS);
+
+    	List<MockFlowFile> flowFiles = runnerConsume.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
+    	MockFlowFile flowFile = flowFiles.get(0);
+    	flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP);
+    	flowFile.assertAttributeExists(Constants.ATTRIBUTE_SENDER_NUMBER);
+
+    	String content = "Testing quote: " + " " + Math.random();
+    	
+    	runner.clearTransferState();
+    	runner.setProperty(PutSignalMessage.RECIPIENTS, flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER));
+    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.setProperty(PutSignalMessage.MESSAGE_QUOTE, Boolean.toString(Boolean.TRUE));
+    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
+    	runner.enqueue(flowFile);
+    	runner.run();
+
+    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
     }
 
 	@Test

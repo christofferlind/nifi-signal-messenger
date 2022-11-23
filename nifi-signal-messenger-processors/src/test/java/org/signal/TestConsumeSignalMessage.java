@@ -1,16 +1,13 @@
 package org.signal;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
-import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
@@ -52,7 +49,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     }
 
     @Test
-    public void consumeMessage() throws ProcessException, InvocationTargetException, IOException, InterruptedException {
+    public void consumeMessage() throws UnsupportedOperationException, IOException, ExecutionException {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
@@ -60,24 +57,32 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 		}
 
     	runner.clearTransferState();
-    	String message = "Testing: " + Double.toString(Math.random());
-    	serviceA.sendMessage(numberB, Arrays.asList(numberA), message, null);
+    	String message = "Testing consumeMessage " + Double.toString(Math.random());
+    	
+    	serviceA.sendMessage(
+    			numberB, 
+    			message, 
+    			Optional.of(Arrays.asList(numberA)), 
+    			Optional.empty(), 
+    			Optional.empty(), 
+    			Optional.empty());
     	
     	runner.setRunSchedule(250);
-    	runner.run(10);
+    	runner.run(5);
     	
-    	runner.assertTransferCount(ConsumeSignalMessage.FAILURE, 0);
+    	runner.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS, 1);
 
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
-    	assertEquals(1, flowFiles.size());
     	MockFlowFile flowFile = flowFiles.get(0);
-    	assertEquals(message, flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE));
-    	assertEquals(numberB, flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER));
+    	
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE, message);
+    	assertBasicAttributes(flowFile, numberA, numberB);
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE, message);
     }
-    
+
     @Test
     @Ignore("Used for manual testing")
-    public void consumeMessageManual() throws ProcessException, InvocationTargetException, IOException, InterruptedException {
+    public void consumeMessageManual() {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
@@ -96,7 +101,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     }
 
     @Test
-    public void consumeGroupMessage() throws ProcessException, InvocationTargetException, IOException, InterruptedException, UnsupportedOperationException, ExecutionException {
+    public void consumeGroupMessage() throws UnsupportedOperationException, IOException, ExecutionException {
     	if(isSettingsEmpty() || TEST_GROUP == null || TEST_GROUP.isBlank()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
@@ -104,21 +109,43 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 		}
 
     	runner.clearTransferState();
-    	String message = "Testing: " + Double.toString(Math.random());
-    	serviceA.sendGroupMessage(numberB, Arrays.asList(TEST_GROUP), message, null);
+    	String message = "Testing consumeGroupMessage " + Double.toString(Math.random());
+    	serviceA.sendMessage(
+    			numberB, 
+    			message, 
+    			Optional.empty(), 
+    			Optional.of(Arrays.asList(TEST_GROUP)), 
+    			Optional.empty(), 
+    			Optional.empty());
     	
-    	runner.setRunSchedule(500);
-    	runner.run(10);
+    	runner.setRunSchedule(250);
+    	runner.run(5);
+    	
+    	runner.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS, 1);
     	
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
     	assertEquals(1, flowFiles.size());
     	MockFlowFile flowFile = flowFiles.get(0);
-    	assertEquals(message, flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE));
-    	assertEquals(numberB, flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER));
     	
-    	assertNotNull(flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE_GROUP_ID));
-    	assertNotEquals("", flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE_GROUP_ID));
-    	assertEquals(TEST_GROUP, flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE));
+    	assertBasicAttributes(flowFile, numberA, numberB);
+
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, TEST_GROUP);
+    	flowFile.assertAttributeExists(Constants.ATTRIBUTE_MESSAGE_GROUP_ID);
+    	flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_MESSAGE_GROUP_ID, "");
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE, message);
     }
+    
+	public static final void assertBasicAttributes(MockFlowFile flowFile, String numberA, String numberB) {
+		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_SENDER_NUMBER, numberB);
+		flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP);
+		flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP_STRING);
+		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_ACCOUNT_NUMBER, numberA);
+		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_RECEIVING_NUMBER, numberA);
+		flowFile.assertAttributeExists(Constants.ATTRIBUTE_SENDER_VERIFIED);
+		flowFile.assertAttributeExists(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE);
+		
+		flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_TIMESTAMP_STRING, "");
+	}
+
 
 }

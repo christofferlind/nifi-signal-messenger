@@ -3,6 +3,7 @@ package org.signal;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
@@ -13,6 +14,7 @@ import org.signal.model.SignalAttachment;
 import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
+import org.signal.model.SignalQuote;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -21,10 +23,13 @@ import com.google.gson.JsonObject;
 @CapabilityDescription("Signal Messenger API")
 public interface SignalControllerService extends ControllerService {
 
-	public void sendMessage(String account, List<String> recipients, String message, SignalAttachment attachment) throws IOException, UnsupportedOperationException;
+	public void sendMessage(String account, 
+							String message, 
+							Optional<List<String>> recipients,
+							Optional<List<String>> groups,
+							Optional<SignalQuote> quote,
+							Optional<SignalAttachment> attachment) throws IOException, UnsupportedOperationException, ExecutionException;
 	
-	public void sendGroupMessage(String account, List<String> groups, String message, SignalAttachment attachment) throws UnsupportedOperationException, IOException, ExecutionException;
-
 	public void addMessageListener(Consumer<SignalMessage> messageListener);
 
 	public void removeMessageListener(Consumer<SignalMessage> messageListener);

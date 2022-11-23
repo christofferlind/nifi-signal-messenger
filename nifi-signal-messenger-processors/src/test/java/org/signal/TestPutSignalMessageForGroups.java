@@ -3,6 +3,7 @@ package org.signal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -76,7 +77,7 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
     	runner.enqueue("");
     	runner.run();
 
-    	String result = TestUtilMethods.getAndWait(refContent);
+    	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
     	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
@@ -113,13 +114,56 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
     	runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
     	runner.run();
 
-    	String result = TestUtilMethods.getAndWait(refContent);
+    	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
     	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
     	assertEquals(content, result);
     	assertEquals(TEST_GROUP, refGroup.get());
 	}
+	
+	@Test
+	public void putGroupMessageOnlyOnce() throws InterruptedException {
+		if(isSettingsEmpty()) {
+			IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+			LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+
+    	String content = "Testing " + TestPutSignalMessageForGroups.class.getSimpleName() + " " + Math.random();
+    	
+    	AtomicReference<String> refContent = new AtomicReference<String>(null);
+    	AtomicReference<String> refGroup = new AtomicReference<String>(null);
+    	AtomicInteger counter = new AtomicInteger(0);
+    	
+    	Consumer<SignalMessage> listener = msg -> {
+    		if(!numberB.equals(msg.getAccount()))
+    			return;
+    		
+    		refGroup.set(msg.getGroupName());
+    		refContent.set(msg.getMessage());
+    		counter.incrementAndGet();
+    	};
+    	
+    	serviceA.addMessageListener(listener);
+
+    	runner.clearTransferState();
+    	runner.setProperty(PutSignalMessage.GROUPS, TEST_GROUP + ", " + TEST_GROUP);
+    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
+    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.enqueue("");
+    	runner.run();
+
+    	String result = Constants.getAndWait(refContent);
+    	serviceA.removeMessageListener(listener);
+    	
+    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS, 1);
+    	
+    	assertEquals(content, result);
+    	assertEquals(TEST_GROUP, refGroup.get());
+    	assertEquals(1, counter.get());
+	}
+	
 
 	@Test
 	public void putGroupMessageMissingGroup() {

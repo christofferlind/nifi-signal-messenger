@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ import org.signal.model.SignalAttachment;
 import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
+import org.signal.model.SignalQuote;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -366,18 +368,77 @@ public class SignalMessengerService extends AbstractControllerService implements
 	public boolean isStarted() {
 		return started;
 	}
-
-	@Override
-	public void sendMessage(String account, List<String> recipients, String message, SignalAttachment attachment) throws IOException, UnsupportedOperationException {
-		JsonArray array = new JsonArray(recipients.size());
-		recipients.forEach(array::add);
-		
-		JsonObject jsonParams = new JsonObject();
-		jsonParams.add("recipient", array);
-		
-		sendMessage(account, message, jsonParams, attachment);
-	}
 	
+	@Override
+	public void sendMessage(String account, 
+							String message, 
+							Optional<List<String>> recipients,
+							Optional<List<String>> groups,
+							Optional<SignalQuote> quote,
+							Optional<SignalAttachment> attachment) throws IOException, UnsupportedOperationException, ExecutionException {
+
+		if(groups.isPresent() && groups.get().size() > 0) {
+			Map<String, SignalGroup> groupIds = getGroups(account);
+			if(groupIds == null || groupIds.isEmpty()) {
+				logError(new IllegalStateException("No groups found for account: " + account));
+				return;
+			}
+			
+			Collection<SignalGroup> groupInformation = groupIds.values();
+			Collection<String> usedGroups = new HashSet<>();
+			
+			for (String groupNameOrId : groups.get()) {
+				Optional<SignalGroup> group = Optional.ofNullable(groupIds.get(groupNameOrId)); 
+						
+				if(group.isEmpty())
+					group = groupInformation
+							.stream()
+							.filter(gi -> gi.getName().equalsIgnoreCase(groupNameOrId))
+							.findAny();
+				
+				if(group.isEmpty()) {
+					logWarn("Could not find group id for group with name: \"" + groupNameOrId +"\"");
+					continue;
+				}
+				
+				String groupUuid = group.get().getId();
+				
+				if(usedGroups.contains(groupUuid))
+					continue;
+				
+				JsonObject jsonParams = new JsonObject();
+				jsonParams.addProperty("group-id", groupUuid);
+
+				if(quote.isPresent()) {
+					SignalQuote q = quote.get();
+					jsonParams.addProperty("quote-timestamp", q.getTimestamp());
+					jsonParams.addProperty("quote-autor", q.getAuthor());
+					jsonParams.addProperty("quote-message", q.getMessage());
+				}
+
+				sendMessage(account, message, jsonParams, attachment);
+				usedGroups.add(groupUuid);
+			}	
+		}
+		// Send to multi recipients
+		else {
+			JsonArray array = new JsonArray(recipients.get().size());
+			recipients.get().stream().distinct().forEach(array::add);
+			
+			JsonObject jsonParams = new JsonObject();
+			jsonParams.add("recipient", array);
+			
+			if(quote.isPresent()) {
+				SignalQuote q = quote.get();
+				jsonParams.addProperty("quote-timestamp", q.getTimestamp());
+				jsonParams.addProperty("quote-author", q.getAuthor());
+				jsonParams.addProperty("quote-message", q.getMessage());
+			}
+			
+			sendMessage(account, message, jsonParams, attachment);
+		}
+	}
+
 	private void logWarn(String message) {
 		ComponentLog log = getLogger();
 		
@@ -396,42 +457,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 		log.error(e.getMessage(), e);
 	}
 	
-
-	@Override
-	public void sendGroupMessage(String account, List<String> groups, String message, SignalAttachment attachment) throws UnsupportedOperationException, IOException, ExecutionException {
-		Map<String, SignalGroup> groupIds = getGroups(account);
-		if(groupIds == null || groupIds.isEmpty()) {
-			logError(new IllegalStateException("No groups found for account: " + account));
-			return;
-		}
-		
-		Collection<SignalGroup> groupInformation = groupIds.values();
-		
-		for (String groupName : groups) {
-			Optional<SignalGroup> group = groupInformation
-					.stream()
-					.filter(gi -> gi.getName().equalsIgnoreCase(groupName))
-					.findAny();
-			
-			if(group.isEmpty()) {
-				logWarn("Could not find group id for group with name: \"" + groupName +"\"");
-				continue;
-			}
-			
-			SignalGroup g = group.get();
-			JsonObject jsonParams = new JsonObject();
-			jsonParams.addProperty("group-id", g.getId());
-
-			sendMessage(account, message, jsonParams, attachment);
-		}
-	}
-	
-	public void sendMessage(String account, String message, JsonObject jsonParams, SignalAttachment attachment) throws UnsupportedOperationException, IOException {
+	public void sendMessage(String account, String message, JsonObject jsonParams, Optional<SignalAttachment> attachment) throws UnsupportedOperationException, IOException {
 		jsonParams.addProperty("message", message);
 		jsonParams.addProperty("account", account);
 
-		if(attachment != null) {
-			jsonParams.addProperty("attachment", attachment.toString());
+		if(attachment.isPresent()) {
+			jsonParams.addProperty("attachment", attachment.get().toString());
 		}
 		
 		sendJsonRpc("send", jsonParams);
