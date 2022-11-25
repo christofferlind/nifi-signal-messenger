@@ -5,8 +5,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -15,7 +15,6 @@ import java.util.function.Consumer;
 
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
-import org.apache.nifi.annotation.behavior.TriggerSerially;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -42,7 +41,7 @@ import org.signal.model.SignalMessage;
 @CapabilityDescription("Consumes signal messages. "
         + "The message of each received sinal message are written as contents of the FlowFile")
 @Tags({ "Signal", "Get", "Ingest", "Ingress", "Message", "Consume" })
-@TriggerSerially
+//@TriggerSerially
 @SeeAlso({PutSignalMessage.class})
 @WritesAttributes({
 //	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIPT, description="Values true or false depending on if the message is a receipt or not"),
@@ -95,12 +94,12 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
-            .description("Successful send")
+            .description("Successful received signal message will be sent to this relationship")
             .build();
 
     public static final Relationship FAILURE = new Relationship.Builder()
             .name("failure")
-            .description("Unsuccessful send")
+            .description("Unsuccessful received signal message will be sent to this relationship")
             .build();
 
 	private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
@@ -113,7 +112,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
     private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
 
-	private volatile Consumer<SignalMessage> messageListener;
+	private volatile Consumer<SignalMessage> messageListener = null;
 
 	private Boolean ignoreUntrustedMessages;
 	
@@ -159,31 +158,36 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     	}
 
     	messageListener = null;
+    	sessionFactoryReference.set(null);
     }
 
 	@Override
 	public void onTrigger(ProcessContext context, ProcessSessionFactory sessionFactory) throws ProcessException {
-    	sessionFactoryReference.set(sessionFactory);
+    	sessionFactoryReference.compareAndSet(null, sessionFactory);
 
     	if(messageListener == null) {
 	    	messageListener = this::handleMessage;
 	    	service.addMessageListener(messageListener);
 	    	
 	    	ComponentLog log = getLogger();
-    		if(log.isDebugEnabled()) log.debug("Added message message listener to SignalControllerService");
+    		if(log.isDebugEnabled()) log.debug("Added message listener to SignalControllerService");
     	}
         
         context.yield();
 	}
 	
 	private void handleMessage(SignalMessage message) {
+		ComponentLog logger = getLogger();
+		
+		if(logger.isDebugEnabled()) logger.debug("Received signal message from " + message.getSource());
+
 		ProcessSessionFactory sessionFactory = sessionFactoryReference.get();
 		if(sessionFactory == null) {
 			getLogger().warn("Message received, but no ProcessSessionFactory is set so we cant handle the signal message");
 			return;
 		}
 		
-		Map<String, String> attributes = new HashMap<>(10);
+		Map<String, String> attributes = new LinkedHashMap<>(12);
 			
 		String account = message.getAccount();
 		String source = message.getSource();
@@ -214,11 +218,12 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			}
 			
 			if(ignoreUntrustedMessages && isUntrusted(attributes)) {
-				ComponentLog logger = getLogger();
 				if(logger.isWarnEnabled()) 
 					logger.warn("Message recieved from untrusted number: " + source);
 				return;
 			}
+			
+			if(logger.isDebugEnabled()) logger.debug("Sender trust level: " + attributes.get(Constants.ATTRIBUTE_SENDER_VERIFIED));
 
 			// ********************************
 			// Check message
@@ -287,10 +292,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
 			attributes.put(CoreAttributes.FILENAME.key(),	"Message from: " + attributes.get(Constants.ATTRIBUTE_SENDER_NUMBER));
 
+			if(logger.isDebugEnabled()) logger.debug("Creating ProcessSession");
+
 			ProcessSession session = sessionFactory.createSession();
 			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, SUCCESS);
+			session.commit();
+			if(logger.isDebugEnabled()) logger.debug("Flowfile sent");
 		} catch (Throwable e) {
 			onError(e);
 			
@@ -300,6 +309,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, FAILURE);
+			session.commit();
 		}
 	}
 

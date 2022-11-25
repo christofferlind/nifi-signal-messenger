@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -46,7 +45,6 @@ import org.signal.model.SignalQuote;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import com.google.common.collect.EvictingQueue;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -78,7 +76,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	private final static Object LOCK_LISTENERS = new Object();
 
 	private Collection<Consumer<SignalMessage>> messageListeners = new LinkedHashSet<>(10);
-	private Map<String, Long> messageListenersLastMessage = new HashMap<>(10);
+//	private Map<String, Long> messageListenersLastMessage = new HashMap<>(10);
 
 	static {
 		final List<PropertyDescriptor> props = new ArrayList<>();
@@ -90,7 +88,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private volatile boolean started = false;
 
-	private EvictingQueue<SignalMessage> messageQueue;
+//	private EvictingQueue<SignalMessage> messageQueue;
 
 	private URL urlRpc;
 
@@ -156,6 +154,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 	 */
 	@OnEnabled
 	public void onEnabled(final ConfigurationContext context) throws InitializationException {
+		logDebugMessage("Enabling SignalMessengerService");
+
 		String url = context.getProperty(PROP_DAEMON_URL).getValue();
 		try {
 			urlRpc = new URL(url + "/api/v1/rpc");
@@ -179,7 +179,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		this.started = true;
 		
 		if(getLogger().isDebugEnabled()) getLogger().debug("Starting receive message thread");
-		messageQueue = EvictingQueue.create(1_000);
+//		messageQueue = EvictingQueue.create(1_000);
 		receiveMessagesThread = new Thread(() -> {
 			try {
 				while(!Thread.currentThread().isInterrupted()) {
@@ -238,6 +238,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 					BufferedReader bufferedReader = new BufferedReader(reader);
 					){
 
+				ComponentLog log = getLogger();
+				
 				listeningEvents.set(true);
 				String line = null;
 				boolean nextLineIsData = false;
@@ -249,21 +251,27 @@ public class SignalMessengerService extends AbstractControllerService implements
 					}
 
 					//Connection keep alive
-					if(line.equalsIgnoreCase(":"))
+					if(line.equalsIgnoreCase(":")) {
+						if(log.isDebugEnabled()) log.debug("Connection keep-alive received");
 						continue;
+					}
 
 					if(line.equalsIgnoreCase("event:receive")) {
+						if(log.isDebugEnabled()) log.debug("Got an receive event");
 						nextLineIsData = true;
+						continue;
 					}
 
 					if(nextLineIsData && line.startsWith("data:")) {
+						if(log.isDebugEnabled()) log.debug("Processing data message");
 						String jsonData = line.substring(5);
 
 						JsonElement element = JsonParser.parseString(jsonData);
 						SignalMessage msg = processData(element);
 						if(msg != null) {
+							if(log.isDebugEnabled()) log.debug("Notifying listeners");
 							synchronized (LOCK_LISTENERS) {
-								messageQueue.add(msg);
+//								messageQueue.add(msg);
 								notifyListeners(msg);
 							}
 						}
@@ -304,6 +312,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 		Optional<String> source = getFieldString(jsonEnvelope, "sourceNumber");
 
 		if(jsonEnvelope.has("dataMessage")) {
+			logDebugMessage("Processing received data message");
+
 			JsonObject dataMessage = jsonEnvelope.get("dataMessage").getAsJsonObject();
 			String message = dataMessage.get("message").getAsString();
 
@@ -335,8 +345,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 			return msg;
 		} else if(jsonEnvelope.has("receiptMessage")) {
+			logDebugMessage("Processing receipt message, not implemented yet");
 			//TODO implement
 		} else if(jsonEnvelope.has("typingMessage")) {
+			logDebugMessage("Processing typing message, not implemented yet");
 			//TODO: implement
 		}
 		
@@ -357,6 +369,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	@OnDisabled
 	public void onDisable() {
+		logDebugMessage("Disabling SignalMessengerService");
 		started = false;
 		if(receiveMessagesThread != null) {
 			try {
@@ -368,7 +381,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 		synchronized (LOCK_LISTENERS) {
 			messageListeners.clear();
-			messageListenersLastMessage.clear();
+//			messageListenersLastMessage.clear();
 		}
 		
     	if(cacheIdentities != null) {
@@ -401,6 +414,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 							Optional<List<String>> groups,
 							Optional<SignalQuote> quote,
 							Optional<SignalAttachment> attachment) throws IOException, UnsupportedOperationException, ExecutionException {
+
+		logDebugMessage("Sending signal message");
 
 		if(groups.isPresent() && groups.get().size() > 0) {
 			Map<String, SignalGroup> groupIds = getGroups(account);
@@ -473,13 +488,22 @@ public class SignalMessengerService extends AbstractControllerService implements
 		log.warn(message);
 	}
 	
-	private void logError(Exception e) {
+	private void logError(Throwable e) {
 		ComponentLog log = getLogger();
 		
 		if(!log.isErrorEnabled())
 			return;
 		
 		log.error(e.getMessage(), e);
+	}
+	
+	private void logDebugMessage(String message) {
+		ComponentLog log = getLogger();
+		
+		if(!log.isDebugEnabled())
+			return;
+		
+		log.debug(message);
 	}
 	
 	public void sendMessage(String account, String message, JsonObject jsonParams, Optional<SignalAttachment> attachment) throws UnsupportedOperationException, IOException {
@@ -498,18 +522,24 @@ public class SignalMessengerService extends AbstractControllerService implements
 		synchronized (LOCK_LISTENERS) {
 			messageListeners.add(Objects.requireNonNull(listener));
 
-			// For new listener, send all cached messages
-			Long lastMessageTimestamp = messageListenersLastMessage.get(listener.getClass().getCanonicalName());
-			var stream = messageQueue.stream();
-
-			if(lastMessageTimestamp != null)
-				stream = stream.filter(msg -> msg.getTimestamp() > lastMessageTimestamp);
-
-			stream.forEach(msg -> {
-				listener.accept(msg);
-				messageListenersLastMessage.put(listener.getClass().getCanonicalName(), msg.getTimestamp());
-			});
+//			// For new listener, send all cached messages
+//			Long lastMessageTimestamp = messageListenersLastMessage.get(listener.getClass().getCanonicalName());
+//			var stream = messageQueue.stream();
+//
+//			if(lastMessageTimestamp != null)
+//				stream = stream.filter(msg -> msg.getTimestamp() > lastMessageTimestamp);
+//
+//			try {
+//				stream.forEach(msg -> {
+//					listener.accept(msg);
+//					messageListenersLastMessage.put(listener.getClass().getCanonicalName(), msg.getTimestamp());
+//				});
+//			} catch (Throwable e) {
+//				logError(e);
+//			}
 		}
+		
+		logDebugMessage("Added message listener");
 	}
 
 	@Override
@@ -517,11 +547,16 @@ public class SignalMessengerService extends AbstractControllerService implements
 		synchronized (LOCK_LISTENERS) {
 			messageListeners.remove(Objects.requireNonNull(messageListener));
 		}
+		logDebugMessage("Removed message listener");
 	}
 	
 	private void notifyListeners(SignalMessage message) {
 		for (Consumer<SignalMessage> consumer : messageListeners) {
-			consumer.accept(message);
+			try {
+				consumer.accept(message);
+			} catch (Throwable e) {
+				logError(new IllegalStateException("Listener " + consumer.toString() + " failed to process message", e));
+			}
 		}
 	}
 
@@ -588,6 +623,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 		String payload = GSON.toJson(rpc);
 
 		URLConnection connection = urlRpc.openConnection();
+		
+		ComponentLog log = getLogger();
+		
+		if(log.isDebugEnabled()) log.debug("Sending RPC message: " + rpc.get("method"));
 
 		// ************************
 		// Send request
