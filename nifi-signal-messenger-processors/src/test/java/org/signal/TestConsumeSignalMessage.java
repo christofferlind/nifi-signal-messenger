@@ -3,6 +3,8 @@ package org.signal;
 import static org.junit.Assert.assertEquals;
 
 import java.io.IOException;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -27,15 +29,23 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     private TestRunner runner;
 
     @Before
-    public void init() throws InitializationException {
+    public void init() throws InitializationException, InterruptedException {
     	if(isSettingsEmpty()) {
     		return;
     	}
     	
 		runner = TestRunners.newTestRunner(ConsumeSignalMessage.class);
 		setSignaleService(runner);
+		runner.enableControllerService(serviceA);
         runner.setProperty(ConsumeSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
-        runner.enableControllerService(serviceA);
+        
+        Instant maxWait = Instant.now().plus(5, ChronoUnit.SECONDS);
+        while(!serviceA.isListeningEvents()) {
+        	Thread.sleep(101);
+        	
+        	if(Instant.now().isAfter(maxWait))
+        		throw new IllegalStateException("Never up and listening");
+        }
     }
     
     @After
@@ -49,7 +59,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     }
 
     @Test
-    public void consumeMessage() throws UnsupportedOperationException, IOException, ExecutionException {
+    public void consumeMessage() throws UnsupportedOperationException, IOException, ExecutionException, InterruptedException {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
@@ -58,6 +68,8 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 
     	runner.clearTransferState();
     	String message = "Testing consumeMessage " + Double.toString(Math.random());
+
+    	runner.run(1, false, true, 5_000);
     	
     	serviceA.sendMessage(
     			numberB, 
@@ -67,8 +79,9 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     			Optional.empty(), 
     			Optional.empty());
     	
-    	runner.setRunSchedule(250);
-    	runner.run(5);
+    	
+    	Thread.sleep(1_000);
+    	runner.stop();
     	
     	runner.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS, 1);
 
@@ -82,7 +95,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 
     @Test
     @Ignore("Used for manual testing")
-    public void consumeMessageManual() {
+    public void consumeMessageManual() throws InterruptedException {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
@@ -91,17 +104,19 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 
     	runner.clearTransferState();
     	
-    	runner.setRunSchedule(2_000);
-    	runner.run(10);
+    	runner.run(1, false, true, 5_000);
     	
-    	runner.assertTransferCount(ConsumeSignalMessage.FAILURE, 0);
+    	Thread.sleep(10_000);
+    	runner.stop();
+    	
+    	runner.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS, 1);
 
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
     	assertEquals(1, flowFiles.size());
     }
 
     @Test
-    public void consumeGroupMessage() throws UnsupportedOperationException, IOException, ExecutionException {
+    public void consumeGroupMessage() throws UnsupportedOperationException, IOException, ExecutionException, InterruptedException {
     	if(isSettingsEmpty() || TEST_GROUP == null || TEST_GROUP.isBlank()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
     		LOGGER.warn(exc.getMessage(), exc);
@@ -110,6 +125,9 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 
     	runner.clearTransferState();
     	String message = "Testing consumeGroupMessage " + Double.toString(Math.random());
+
+    	runner.run(1, false, true, 5_000);
+    	
     	serviceA.sendMessage(
     			numberB, 
     			message, 
@@ -117,10 +135,11 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     			Optional.of(Arrays.asList(TEST_GROUP)), 
     			Optional.empty(), 
     			Optional.empty());
+
     	
-    	runner.setRunSchedule(250);
-    	runner.run(5);
-    	
+    	Thread.sleep(1_000);
+    	runner.stop();
+
     	runner.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS, 1);
     	
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);

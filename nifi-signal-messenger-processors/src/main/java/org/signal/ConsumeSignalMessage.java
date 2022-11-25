@@ -153,7 +153,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     }
     
     @OnStopped
-    public void unschedule() {
+    public void onStopped() {
     	if(messageListener != null && service != null) {
     		service.removeMessageListener(messageListener);
     	}
@@ -163,11 +163,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
 	@Override
 	public void onTrigger(ProcessContext context, ProcessSessionFactory sessionFactory) throws ProcessException {
-    	sessionFactoryReference.compareAndSet(null, sessionFactory);
+    	sessionFactoryReference.set(sessionFactory);
 
     	if(messageListener == null) {
 	    	messageListener = this::handleMessage;
 	    	service.addMessageListener(messageListener);
+	    	
+	    	ComponentLog log = getLogger();
+    		if(log.isDebugEnabled()) log.debug("Added message message listener to SignalControllerService");
     	}
         
         context.yield();

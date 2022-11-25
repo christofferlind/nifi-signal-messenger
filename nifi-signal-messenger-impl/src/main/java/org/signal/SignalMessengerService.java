@@ -22,6 +22,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -138,7 +139,9 @@ public class SignalMessengerService extends AbstractControllerService implements
     };
 
     private LoadingCache<String, Map<String, SignalIdentity>> cacheIdentities; 
-    private LoadingCache<String, Map<String, SignalGroup>> cacheGroups; 
+    private LoadingCache<String, Map<String, SignalGroup>> cacheGroups;
+
+	private final AtomicBoolean listeningEvents = new AtomicBoolean(false); 
 
 	@Override
 	protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
@@ -168,14 +171,15 @@ public class SignalMessengerService extends AbstractControllerService implements
     	cacheGroups = CacheBuilder.newBuilder()
     			.expireAfterAccess(6, TimeUnit.HOURS)
     			.build(loaderGroups);
-		
+
+    	String version = getSignalVersion();
+    	if(version == null || version.isBlank())
+    		throw new InitializationException("Could not obtain version from signal-cli daemon. Please check the configured URL");
+    	
 		this.started = true;
 		
 		if(getLogger().isDebugEnabled()) getLogger().debug("Starting receive message thread");
 		messageQueue = EvictingQueue.create(1_000);
-		
-//		ReceiveMessageHandler handler = SignalMessengerService.this::handleMessage;
-		
 		receiveMessagesThread = new Thread(() -> {
 			try {
 				while(!Thread.currentThread().isInterrupted()) {
@@ -205,8 +209,22 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 		receiveMessagesThread.setDaemon(true);
 		receiveMessagesThread.start();
+		
+		getLogger().info("Connected to signal-cli version: " + version);
 	}
 	
+	public String getSignalVersion() {
+		try {
+			JsonElement result = sendJsonRpc("version", Collections.emptyMap());
+			
+			return result.getAsJsonObject()
+						.get("version").getAsString();
+		} catch (Exception e) {
+			getLogger().error(e.getMessage(), e);
+			return null;
+		}
+	}
+
 	private void connectAndRecieveMessaged(String url2) throws InterruptedException, JsonSyntaxException, IOException {
 		URLConnection connection = urlEvents.openConnection();
 		if(connection instanceof HttpURLConnection) {
@@ -220,11 +238,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 					BufferedReader bufferedReader = new BufferedReader(reader);
 					){
 
+				listeningEvents.set(true);
 				String line = null;
 				boolean nextLineIsData = false;
 				while((line = bufferedReader.readLine()) != null) {
 
-					if(Thread.currentThread().isInterrupted()) {
+					if(Thread.currentThread().isInterrupted() || !isStarted()) {
 						Thread.currentThread().interrupt();
 						throw new InterruptedException();
 					}
@@ -251,6 +270,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 						continue;
 					}
 				}
+			} finally {
+				listeningEvents.set(false);
 			}
 		} else {
 			throw new UnsupportedOperationException();
@@ -367,6 +388,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 	
 	public boolean isStarted() {
 		return started;
+	}
+	
+	public boolean isListeningEvents() {
+		return listeningEvents.get();
 	}
 	
 	@Override

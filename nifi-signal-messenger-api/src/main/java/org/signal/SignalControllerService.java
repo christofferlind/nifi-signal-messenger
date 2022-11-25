@@ -44,6 +44,11 @@ public interface SignalControllerService extends ControllerService {
 	 * @throws ExecutionException
 	 */
 	public Map<String, SignalGroup> getGroups(String account) throws UnsupportedOperationException, IOException, ExecutionException;
+
+	/**
+	 * @return null if not connected to the endpoint
+	 */
+	public String getSignalVersion();
 	
 	public JsonElement sendJsonRpc(String method, JsonObject params) throws UnsupportedOperationException, IOException; 	
 	public JsonElement sendJsonRpc(String method, Map<String, String> params) throws UnsupportedOperationException, IOException;
