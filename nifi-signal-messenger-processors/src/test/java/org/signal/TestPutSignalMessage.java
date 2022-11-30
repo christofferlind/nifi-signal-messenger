@@ -15,6 +15,7 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.signal.model.SignalData;
 import org.signal.model.SignalMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,11 +60,12 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	
     	AtomicReference<String> refContent = new AtomicReference<String>(null);
     	
-    	Consumer<SignalMessage> listener = msg -> {
+    	Consumer<SignalData> listener = msg -> {
     		if(!numberB.equals(msg.getAccount()))
     			return;
     		
-    		refContent.set(msg.getMessage());
+    		if(msg instanceof SignalMessage)
+    			refContent.set(((SignalMessage) msg).getMessage());
     	};
     	
     	serviceA.addMessageListener(listener);
@@ -117,11 +119,12 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	
     	AtomicReference<String> refContent = new AtomicReference<String>(null);
     	
-    	Consumer<SignalMessage> listener = msg -> {
+    	Consumer<SignalData> listener = msg -> {
     		if(!numberB.equals(msg.getAccount()))
     			return;
     		
-    		refContent.set(msg.getMessage());
+    		if(msg instanceof SignalMessage)
+    			refContent.set(((SignalMessage) msg).getMessage());
     	};
     	
     	serviceA.addMessageListener(listener);

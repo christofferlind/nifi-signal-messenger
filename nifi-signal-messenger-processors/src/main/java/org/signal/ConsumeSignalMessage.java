@@ -33,9 +33,11 @@ import org.apache.nifi.processor.ProcessSessionFactory;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
+import org.signal.model.SignalData;
 import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
+import org.signal.model.SignalReaction;
 
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
 @CapabilityDescription("Consumes signal messages. "
@@ -92,6 +94,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .defaultValue(Boolean.toString(Boolean.FALSE))
             .build();
 
+	public static final PropertyDescriptor IGNORE_REACTION = new PropertyDescriptor
+            .Builder().name("IgnoreReaction")
+            .displayName("Ignore reactions")
+            .description("If set to to true then only messages is transfered to success relationship.")
+            .allowableValues(Boolean.toString(Boolean.TRUE), Boolean.toString(Boolean.FALSE))
+            .defaultValue(Boolean.toString(Boolean.FALSE))
+            .build();
+
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("success")
             .description("Successful received signal message will be sent to this relationship")
@@ -112,15 +122,18 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
     private AtomicReference<ProcessSessionFactory> sessionFactoryReference = new AtomicReference<>();
 
-	private volatile Consumer<SignalMessage> messageListener = null;
+	private volatile Consumer<SignalData> messageListener = null;
 
 	private Boolean ignoreUntrustedMessages;
+
+	private Boolean ignoreReactions;
 	
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
         descriptors.add(SIGNAL_SERVICE);
         descriptors.add(IGNORE_UNTRUSTED_SENDER);
+        descriptors.add(IGNORE_REACTION);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -143,6 +156,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     public void onScheduled(ProcessContext context) throws ProcessException {
     	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
     	ignoreUntrustedMessages = context.getProperty(IGNORE_UNTRUSTED_SENDER).asBoolean();
+    	ignoreReactions = context.getProperty(IGNORE_REACTION).asBoolean();
     }
     
     private void onError(Throwable e) {
@@ -176,10 +190,15 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
         context.yield();
 	}
 	
-	private void handleMessage(SignalMessage message) {
+	private void handleMessage(SignalData message) {
 		ComponentLog logger = getLogger();
 		
 		if(logger.isDebugEnabled()) logger.debug("Received signal message from " + message.getSource());
+		
+		if(ignoreReactions && message instanceof SignalReaction) {
+			if(logger.isDebugEnabled()) logger.debug("Ignoring reaction: " + message.getSource());
+			return;
+		}
 
 		ProcessSessionFactory sessionFactory = sessionFactoryReference.get();
 		if(sessionFactory == null) {
@@ -228,8 +247,16 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			// ********************************
 			// Check message
 			// ********************************
-			attributes.put(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(message.isViewOnce()));
-			attributes.put(Constants.ATTRIBUTE_MESSAGE, message.getMessage());
+			if(message instanceof SignalMessage) {
+				SignalMessage signalMessage = (SignalMessage) message;
+				attributes.put(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE, Boolean.toString(signalMessage.isViewOnce()));
+				attributes.put(Constants.ATTRIBUTE_MESSAGE, signalMessage.getMessage());
+			} else if(message instanceof SignalReaction) {
+				SignalReaction signalReaction = (SignalReaction) message;
+				attributes.put(Constants.ATTRIBUTE_MESSAGE_REACTION_EMOJI, signalReaction.getEmoji());
+				attributes.put(Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, signalReaction.getTargetAuthor());
+				attributes.put(Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(signalReaction.getTargetSentTimestamp()));
+			}
 
 			// ********************************
 			// Check group
@@ -298,7 +325,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			FlowFile flowFile = session.create();
 			flowFile = session.putAllAttributes(flowFile, attributes);
 			session.transfer(flowFile, SUCCESS);
-			session.commit();
+			session.commitAsync();
 			if(logger.isDebugEnabled()) logger.debug("Flowfile sent");
 		} catch (Throwable e) {
 			onError(e);

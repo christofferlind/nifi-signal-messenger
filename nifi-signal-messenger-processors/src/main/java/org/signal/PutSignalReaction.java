@@ -48,6 +48,10 @@ public class PutSignalReaction extends AbstractProcessor {
 
 		tmp.put("check-green", 		"0x2705");
 		tmp.put("cross-red", 		"0x274C");
+		tmp.put("red-heart", 		"0x2764");
+		tmp.put("fire", 			"0x1F525");
+		tmp.put("star", 			"0x2B50");
+		tmp.put("eyes", 			"0x1F440");
 		EMOJI_NAMES = Collections.unmodifiableMap(tmp);
 	}
 

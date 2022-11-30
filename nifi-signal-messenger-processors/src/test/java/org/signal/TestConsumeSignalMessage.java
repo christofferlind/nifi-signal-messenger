@@ -21,6 +21,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.JsonElement;
+
 public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(TestConsumeSignalMessage.class);
 
@@ -88,8 +90,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
     	MockFlowFile flowFile = flowFiles.get(0);
     	
-    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE, message);
-    	assertBasicAttributes(flowFile, numberA, numberB);
+    	TestUtilMethods.assertBasicAttributes(flowFile, numberA, numberB);
     	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE, message);
     }
 
@@ -146,25 +147,63 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	assertEquals(1, flowFiles.size());
     	MockFlowFile flowFile = flowFiles.get(0);
     	
-    	assertBasicAttributes(flowFile, numberA, numberB);
+    	TestUtilMethods.assertBasicAttributes(flowFile, numberA, numberB);
 
+		flowFile.assertAttributeExists(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE);
     	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, TEST_GROUP);
     	flowFile.assertAttributeExists(Constants.ATTRIBUTE_MESSAGE_GROUP_ID);
     	flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_MESSAGE_GROUP_ID, "");
     	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE, message);
     }
-    
-	public static final void assertBasicAttributes(MockFlowFile flowFile, String numberA, String numberB) {
-		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_SENDER_NUMBER, numberB);
-		flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP);
-		flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP_STRING);
-		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_ACCOUNT_NUMBER, numberA);
-		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_RECEIVING_NUMBER, numberA);
-		flowFile.assertAttributeExists(Constants.ATTRIBUTE_SENDER_VERIFIED);
-		flowFile.assertAttributeExists(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE);
-		
-		flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_TIMESTAMP_STRING, "");
-	}
 
+    @Test
+    public void consumeReaction() throws UnsupportedOperationException, IOException, ExecutionException, InterruptedException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
 
+    	String message = "Testing consumeMessage " + Double.toString(Math.random());
+    	JsonElement result = serviceA.sendMessage(
+						    			numberA, 
+						    			message, 
+						    			Optional.of(Arrays.asList(numberB)), 
+						    			Optional.empty(), 
+						    			Optional.empty(), 
+						    			Optional.empty());
+    	Thread.sleep(500);
+    	
+    	runner.clearTransferState();
+
+    	runner.run(1, false, true, 5_000);
+    	
+    	long timestamp = result.getAsJsonObject().get("timestamp").getAsLong();
+    	
+    	String emoji = "0x1F44D";
+		serviceA.sendReaction(
+    			numberB, 
+    			Optional.of(Arrays.asList(numberA)), 
+    			Optional.empty(), 
+    			numberA, 
+    			timestamp, 
+    			emoji, 
+    			Optional.of(false));
+    	
+    	Thread.sleep(1_000);
+    	runner.stop();
+    	
+    	runner.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS, 1);
+
+    	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
+    	MockFlowFile flowFile = flowFiles.get(0);
+    	
+    	TestUtilMethods.assertBasicAttributes(flowFile, numberA, numberB);
+    	flowFile.assertAttributeNotExists(Constants.ATTRIBUTE_MESSAGE);
+    	flowFile.assertAttributeNotExists(Constants.ATTRIBUTE_MESSAGE_VIEW_ONCE);
+    	
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE_REACTION_EMOJI, emoji);
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, numberA);
+    	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(timestamp));
+    }
 }

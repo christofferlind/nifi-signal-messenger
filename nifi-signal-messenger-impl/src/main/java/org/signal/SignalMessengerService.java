@@ -37,10 +37,12 @@ import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.signal.model.SignalAttachment;
+import org.signal.model.SignalData;
 import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 import org.signal.model.SignalQuote;
+import org.signal.model.SignalReaction;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -75,7 +77,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	
 	private final static Object LOCK_LISTENERS = new Object();
 
-	private Collection<Consumer<SignalMessage>> messageListeners = new LinkedHashSet<>(10);
+	private Collection<Consumer<SignalData>> messageListeners = new LinkedHashSet<>(10);
 //	private Map<String, Long> messageListenersLastMessage = new HashMap<>(10);
 
 	static {
@@ -267,12 +269,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 						String jsonData = line.substring(5);
 
 						JsonElement element = JsonParser.parseString(jsonData);
-						SignalMessage msg = processData(element);
-						if(msg != null) {
+						SignalData data = processData(element);
+						if(data != null) {
 							if(log.isDebugEnabled()) log.debug("Notifying listeners");
 							synchronized (LOCK_LISTENERS) {
 //								messageQueue.add(msg);
-								notifyListeners(msg);
+								notifyListeners(data);
 							}
 						}
 						continue;
@@ -286,15 +288,17 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
 	}
 
-	private SignalMessage processData(JsonElement element) {
+	private SignalData processData(JsonElement element) {
 		if(!element.isJsonObject()){
 			return null;
 		}
 		
+		ComponentLog log = getLogger();
+		
 		JsonObject jsonObject = element.getAsJsonObject();
 		if(!jsonObject.has("account") || !jsonObject.has("envelope")) {
 			UnsupportedOperationException exc = new UnsupportedOperationException("Unsupporterd signal message");
-			getLogger().error(exc.getMessage(), exc);
+			if(log.isErrorEnabled()) log.error(exc.getMessage(), exc);
 			return null;
 		}
 		
@@ -303,47 +307,66 @@ public class SignalMessengerService extends AbstractControllerService implements
 		JsonObject jsonEnvelope = jsonObject.get("envelope").getAsJsonObject();
 		if(!jsonEnvelope.has("timestamp")) {
 			UnsupportedOperationException exc = new UnsupportedOperationException("Unsupporterd signal message");
-			getLogger().error(exc.getMessage(), exc);
+			if(log.isErrorEnabled()) log.error(exc.getMessage(), exc);
 			return null;
 		}
 
 		long timestamp = jsonEnvelope.get("timestamp").getAsLong();
-		Optional<String> sourceName = getFieldString(jsonEnvelope, "sourceName");
-		Optional<String> source = getFieldString(jsonEnvelope, "sourceNumber");
+		String sourceName = getFieldString(jsonEnvelope, "sourceName").orElse("Unknown");
+		String source = getFieldString(jsonEnvelope, "sourceNumber").orElse("Unknown");
 
 		if(jsonEnvelope.has("dataMessage")) {
+			
 			logDebugMessage("Processing received data message");
+			SignalData se = null;
 
 			JsonObject dataMessage = jsonEnvelope.get("dataMessage").getAsJsonObject();
-			String message = dataMessage.get("message").getAsString();
+			
+			if(dataMessage.has("message") && !dataMessage.get("message").isJsonNull()) {
+				String message = dataMessage.get("message").getAsString();
+	
+				SignalMessage msg = new SignalMessage();
+				msg.setMessage(message);
+				msg.setViewOnce(dataMessage.get("viewOnce").getAsBoolean());
+				msg.setExpires(dataMessage.get("expiresInSeconds").getAsLong());
+				se = msg;
+				if(log.isInfoEnabled()) log.info("Received message from: " + source);
+			} else if(dataMessage.has("reaction")) {
+				JsonObject obj = dataMessage.get("reaction").getAsJsonObject();
+				SignalReaction msg = new SignalReaction();
+				msg.setEmoji(obj.get("emoji").getAsString());
+				msg.setTargetAutor(obj.get("targetAuthorNumber").getAsString());
+				msg.setTargetSentTimestamp(obj.get("targetSentTimestamp").getAsLong());
+				msg.setRemove(obj.get("isRemove").getAsBoolean());
+				se = msg;
+				if(log.isInfoEnabled()) log.info("Received reaction from: " + source);
+			}
+			
+			if(se == null)
+				throw new IllegalStateException("Unsupported message!?");
 
-			SignalMessage msg = new SignalMessage();
-			msg.setMessage(message);
-			msg.setSource(source.orElse("Unknown"));
-			msg.setSourceName(sourceName.orElse("Unknown"));
-			msg.setTimestamp(timestamp);
-			msg.setAccount(account);
-			msg.setViewOnce(dataMessage.get("viewOnce").getAsBoolean());
-			msg.setExpires(dataMessage.get("expiresInSeconds").getAsLong());
+			se.setSource(source);
+			se.setSourceName(sourceName);
+			se.setTimestamp(timestamp);
+			se.setAccount(account);
 
 			if(dataMessage.has("groupInfo")) {
 				JsonObject jsonGroupInfo = dataMessage.get("groupInfo").getAsJsonObject();
 				String groupId = jsonGroupInfo.has("groupId") ? jsonGroupInfo.get("groupId").getAsString() : null;
-				msg.setGroupId(groupId);
+				se.setGroupId(groupId);
 				
 				//Try to load the group name
 				try {
 					Map<String, SignalGroup> groups = getGroups(account);
 					SignalGroup signalGroup = groups.get(groupId);
 					if(signalGroup != null)
-						msg.setGroupName(signalGroup.getName());
+						se.setGroupName(signalGroup.getName());
 				} catch (Exception e) {
-					ComponentLog log = getLogger();
 					if(log.isErrorEnabled()) log.error(e.getMessage(), e);
 				}
 			}
 
-			return msg;
+			return se;
 		} else if(jsonEnvelope.has("receiptMessage")) {
 			logDebugMessage("Processing receipt message, not implemented yet");
 			//TODO implement
@@ -408,7 +431,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	}
 
 	@Override
-	public void sendReaction(String account, 
+	public JsonElement sendReaction(String account, 
 							Optional<List<String>> recipients,
 							Optional<String> group,
 							String author,
@@ -433,11 +456,11 @@ public class SignalMessengerService extends AbstractControllerService implements
 		jsonParams.addProperty("target-author", author);
 		jsonParams.addProperty("remove", removeReaction);
 		
-		sendJsonRpc("sendReaction", jsonParams);
+		return sendJsonRpc("sendReaction", jsonParams);
 	}
 	
 	@Override
-	public void sendMessage(String account, 
+	public JsonElement sendMessage(String account, 
 							String message, 
 							Optional<List<String>> recipients,
 							Optional<List<String>> groups,
@@ -450,7 +473,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 			Map<String, SignalGroup> groupIds = getGroups(account);
 			if(groupIds == null || groupIds.isEmpty()) {
 				logError(new IllegalStateException("No groups found for account: " + account));
-				return;
+				return new JsonObject();
 			}
 			
 			Collection<SignalGroup> groupInformation = groupIds.values();
@@ -504,8 +527,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 				jsonParams.addProperty("quote-message", q.getMessage());
 			}
 			
-			sendMessage(account, message, jsonParams, attachment);
+			return sendMessage(account, message, jsonParams, attachment);
 		}
+		
+		return new JsonObject();
 	}
 
 	private void logWarn(String message) {
@@ -535,7 +560,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		log.debug(message);
 	}
 	
-	public void sendMessage(String account, String message, JsonObject jsonParams, Optional<SignalAttachment> attachment) throws UnsupportedOperationException, IOException {
+	public JsonElement sendMessage(String account, String message, JsonObject jsonParams, Optional<SignalAttachment> attachment) throws UnsupportedOperationException, IOException {
 		jsonParams.addProperty("message", message);
 		jsonParams.addProperty("account", account);
 
@@ -543,11 +568,11 @@ public class SignalMessengerService extends AbstractControllerService implements
 			jsonParams.addProperty("attachment", attachment.get().toString());
 		}
 		
-		sendJsonRpc("send", jsonParams);
+		return sendJsonRpc("send", jsonParams);
 	}
 
 	@Override
-	public void addMessageListener(Consumer<SignalMessage> listener) {
+	public void addMessageListener(Consumer<SignalData> listener) {
 		synchronized (LOCK_LISTENERS) {
 			messageListeners.add(Objects.requireNonNull(listener));
 
@@ -572,17 +597,17 @@ public class SignalMessengerService extends AbstractControllerService implements
 	}
 
 	@Override
-	public void removeMessageListener(Consumer<SignalMessage> messageListener) {
+	public void removeMessageListener(Consumer<SignalData> messageListener) {
 		synchronized (LOCK_LISTENERS) {
 			messageListeners.remove(Objects.requireNonNull(messageListener));
 		}
 		logDebugMessage("Removed message listener");
 	}
 	
-	private void notifyListeners(SignalMessage message) {
-		for (Consumer<SignalMessage> consumer : messageListeners) {
+	private void notifyListeners(SignalData data) {
+		for (Consumer<SignalData> consumer : messageListeners) {
 			try {
-				consumer.accept(message);
+				consumer.accept(data);
 			} catch (Throwable e) {
 				logError(new IllegalStateException("Listener " + consumer.toString() + " failed to process message", e));
 			}

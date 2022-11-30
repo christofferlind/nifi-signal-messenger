@@ -11,9 +11,9 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.controller.ControllerService;
 import org.signal.model.SignalAttachment;
+import org.signal.model.SignalData;
 import org.signal.model.SignalGroup;
 import org.signal.model.SignalIdentity;
-import org.signal.model.SignalMessage;
 import org.signal.model.SignalQuote;
 
 import com.google.gson.JsonElement;
@@ -23,14 +23,14 @@ import com.google.gson.JsonObject;
 @CapabilityDescription("Signal Messenger API")
 public interface SignalControllerService extends ControllerService {
 
-	public void sendMessage(String account, 
+	public JsonElement sendMessage(String account, 
 							String message, 
 							Optional<List<String>> recipients,
 							Optional<List<String>> groups,
 							Optional<SignalQuote> quote,
 							Optional<SignalAttachment> attachment) throws IOException, UnsupportedOperationException, ExecutionException;
 
-	public void sendReaction(String account, 
+	public JsonElement sendReaction(String account, 
 							Optional<List<String>> recipients, 
 							Optional<String> group, 
 							String author,
@@ -38,9 +38,9 @@ public interface SignalControllerService extends ControllerService {
 							String emoji, 
 							Optional<Boolean> remove) throws IOException, UnsupportedOperationException, ExecutionException;
 	
-	public void addMessageListener(Consumer<SignalMessage> messageListener);
+	public void addMessageListener(Consumer<SignalData> messageListener);
 
-	public void removeMessageListener(Consumer<SignalMessage> messageListener);
+	public void removeMessageListener(Consumer<SignalData> messageListener);
 
 	public Map<String, SignalIdentity> getIdentities(String account) throws UnsupportedOperationException, IOException, ExecutionException;
 	/**
