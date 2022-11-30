@@ -38,6 +38,11 @@ public interface SignalControllerService extends ControllerService {
 							String emoji, 
 							Optional<Boolean> remove) throws IOException, UnsupportedOperationException, ExecutionException;
 	
+	public JsonElement deleteMessage(String account, 
+			Optional<List<String>> recipients,
+			Optional<List<String>> groups,
+			long timestmap) throws IOException, UnsupportedOperationException, ExecutionException;
+	
 	public void addMessageListener(Consumer<SignalData> messageListener);
 
 	public void removeMessageListener(Consumer<SignalData> messageListener);

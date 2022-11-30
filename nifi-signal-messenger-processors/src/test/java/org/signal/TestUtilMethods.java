@@ -13,7 +13,7 @@ public class TestUtilMethods {
 	
     @Test
     public void testSplitComma() {
-		List<String> list = PutSignalMessage.getCommaSeparatedList("1,2,3,4");
+		List<String> list = Constants.getCommaSeparatedList("1,2,3,4");
     	assertNotNull(list);
     	assertEquals(4, list.size());
     	assertArrayEquals(new String[] {"1","2","3","4"}, list.toArray());
@@ -21,7 +21,7 @@ public class TestUtilMethods {
 
 	@Test
     public void testSplitCommaWithSpace() {
-		List<String> list = PutSignalMessage.getCommaSeparatedList("1 , 2 , 3 , 4 ");
+		List<String> list = Constants.getCommaSeparatedList("1 , 2 , 3 , 4 ");
     	assertNotNull(list);
     	assertEquals(4, list.size());
     	assertArrayEquals(new String[] {"1","2","3","4"}, list.toArray());
@@ -29,7 +29,7 @@ public class TestUtilMethods {
 
 	@Test
     public void testSplitCommaWithEmpty() {
-		List<String> list = PutSignalMessage.getCommaSeparatedList("1 ,, 2 , , , 3 , 4 ");
+		List<String> list = Constants.getCommaSeparatedList("1 ,, 2 , , , 3 , 4 ");
     	assertNotNull(list);
     	assertEquals(4, list.size());
     	assertArrayEquals(new String[] {"1","2","3","4"}, list.toArray());
@@ -37,14 +37,14 @@ public class TestUtilMethods {
 
 	@Test
     public void testSplitCommaEmpty() {
-		List<String> list = PutSignalMessage.getCommaSeparatedList("");
+		List<String> list = Constants.getCommaSeparatedList("");
     	assertNotNull(list);
     	assertEquals(0, list.size());
     }
 
 	@Test
     public void testSplitCommaNull() {
-		List<String> list = PutSignalMessage.getCommaSeparatedList(null);
+		List<String> list = Constants.getCommaSeparatedList(null);
     	assertNotNull(list);
     	assertEquals(0, list.size());
     }

@@ -2,6 +2,9 @@ package org.signal;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class Constants {
@@ -55,4 +58,20 @@ public class Constants {
 	}
 
 	static final String MSG_MISSING_RECIPIENT_AND_GROUP = "Neither groups nor recipients is specified";
+
+	public static final List<String> getCommaSeparatedList(String string) {
+		if(string == null)
+			return Collections.emptyList();
+		
+		String[] split = string.split(",");
+		List<String> recipients = new ArrayList<>(split.length);
+		for (String element : split) {
+			String trimmed = element.trim();
+			if(trimmed.isEmpty())
+				continue;
+	
+			recipients.add(trimmed);
+		}
+		return recipients;
+	}
 }

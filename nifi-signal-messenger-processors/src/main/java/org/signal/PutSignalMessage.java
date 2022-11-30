@@ -17,6 +17,8 @@ import java.util.Set;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
+import org.apache.nifi.annotation.behavior.WritesAttribute;
+import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -36,6 +38,9 @@ import org.apache.nifi.processor.util.StandardValidators;
 import org.signal.model.SignalAttachment;
 import org.signal.model.SignalQuote;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
 @Tags({ "Signal", "Put", "Message", "Send" })
 @CapabilityDescription("Sends a message on Signal, with or without attachment")
 @SeeAlso({})
@@ -43,7 +48,7 @@ import org.signal.model.SignalQuote;
 	@ReadsAttribute(attribute="mime.type", description="If attachment is set to 'true', then this attribute is read and set as the mime type for the attachment"),
 	@ReadsAttribute(attribute="filename", description="If attachment is set to 'true', then this attribute is read and set as the file name for the attachment")
 })
-//@WritesAttributes({@WritesAttribute(attribute="", description="")})
+@WritesAttributes({@WritesAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP, description="Timestamp of the sent message")})
 public class PutSignalMessage extends AbstractProcessor {
 
 	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
@@ -205,8 +210,8 @@ public class PutSignalMessage extends AbstractProcessor {
 		getLogger().debug("Using attachments: " + useAttachment);
 
 		try {
-			List<String> groups = getCommaSeparatedList(groupsString);
-			List<String> recipients = getCommaSeparatedList(recipientsString);
+			List<String> groups = Constants.getCommaSeparatedList(groupsString);
+			List<String> recipients = Constants.getCommaSeparatedList(recipientsString);
 			
 			if(groups.isEmpty() && recipients.isEmpty())
 				throw new IllegalStateException(Constants.MSG_MISSING_RECIPIENT_AND_GROUP);
@@ -226,14 +231,22 @@ public class PutSignalMessage extends AbstractProcessor {
 				quote = createQuote(context, flowFile, messageContent);
 			}
 
-			signalService.sendMessage(source, 
+			JsonElement result = signalService.sendMessage(source, 
 					messageContent, 
 					Optional.ofNullable(recipients), 
 					Optional.ofNullable(groups), 
 					Optional.ofNullable(quote), 
 					Optional.ofNullable(attachment));
 			
-			session.putAttribute(flowFile, "signal.send.failed", Boolean.toString(Boolean.FALSE));
+			if(result.isJsonObject()) {
+				JsonObject object = result.getAsJsonObject();
+				if(object.has("timestamp")) {
+					String timestampString = object.get("timestamp").getAsString();
+					flowFile = session.putAttribute(flowFile, Constants.ATTRIBUTE_TIMESTAMP, timestampString);
+				}
+			}
+			
+			flowFile = session.putAttribute(flowFile, "signal.send.failed", Boolean.toString(Boolean.FALSE));
 			session.transfer(flowFile, SUCCESS);
 		} catch(Throwable e) {
 			getLogger().error(e.getMessage(), e);
@@ -292,22 +305,6 @@ public class PutSignalMessage extends AbstractProcessor {
 			String content = outputStream.toString(StandardCharsets.UTF_8);
 			return new SignalAttachment(mimeType, filename, content);
 		}
-	}
-
-	public static final List<String> getCommaSeparatedList(String string) {
-		if(string == null)
-			return Collections.emptyList();
-		
-		String[] split = string.split(",");
-		List<String> recipients = new ArrayList<>(split.length);
-		for (String element : split) {
-			String trimmed = element.trim();
-			if(trimmed.isEmpty())
-				continue;
-
-			recipients.add(trimmed);
-		}
-		return recipients;
 	}
 
 	private String loadFlowFileContentAsMessageContent(final ProcessSession session, FlowFile flowFile) throws IOException {

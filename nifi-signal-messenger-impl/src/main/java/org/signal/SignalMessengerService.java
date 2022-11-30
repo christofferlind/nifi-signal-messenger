@@ -142,7 +142,7 @@ public class SignalMessengerService extends AbstractControllerService implements
     private LoadingCache<String, Map<String, SignalGroup>> cacheGroups;
 
 	private final AtomicBoolean listeningEvents = new AtomicBoolean(false); 
-
+	
 	@Override
 	protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
 		return properties;
@@ -191,7 +191,13 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 					if(getLogger().isDebugEnabled()) getLogger().debug("Listening for messages: " + url);
 					
-					connectAndRecieveMessaged(url);
+					try {
+						connectAndRecieveMessaged(url);
+					} catch (IOException e) {
+						logError(e);
+						Thread.sleep(5_000);
+						continue;
+					}
 				}
 			} catch (AssertionError e) {
 				if(e.getCause() instanceof InterruptedException) {
@@ -340,6 +346,9 @@ public class SignalMessengerService extends AbstractControllerService implements
 				msg.setRemove(obj.get("isRemove").getAsBoolean());
 				se = msg;
 				if(log.isInfoEnabled()) log.info("Received reaction from: " + source);
+			} else if(dataMessage.has("remoteDelete")) {
+				//Do nothing...
+				return null;
 			}
 			
 			if(se == null)
@@ -532,6 +541,28 @@ public class SignalMessengerService extends AbstractControllerService implements
 		
 		return new JsonObject();
 	}
+	
+	@Override
+	public JsonElement deleteMessage(
+			String account, 
+			Optional<List<String>> recipients, 
+			Optional<List<String>> groups,
+			long timestmap) throws IOException, UnsupportedOperationException, ExecutionException {
+		
+		logDebugMessage("Remotely delete signal message");
+		
+		JsonArray array = new JsonArray(recipients.get().size());
+		recipients.get().stream().distinct().forEach(array::add);
+		
+		JsonObject jsonParams = new JsonObject();
+		jsonParams.addProperty("account", account);
+		jsonParams.add("recipient", array);
+
+		jsonParams.addProperty("target-timestamp", Long.valueOf(timestmap));
+		
+		return sendJsonRpc("remoteDelete", jsonParams);
+	}
+
 
 	private void logWarn(String message) {
 		ComponentLog log = getLogger();

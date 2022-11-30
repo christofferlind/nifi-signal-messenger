@@ -14,6 +14,7 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.signal.model.SignalData;
 import org.signal.model.SignalMessage;
@@ -138,12 +139,15 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS, 1);
     	assertEquals(content, result);
+    	
+    	MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutSignalMessage.SUCCESS).get(0);
+    	flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_TIMESTAMP, "");
     }
 
     @Test
-//    @Ignore("Manual testing")
+    @Ignore("Manual testing")
     public void putMessageReply() throws InterruptedException, InitializationException {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");

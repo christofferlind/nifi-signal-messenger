@@ -1,3 +1,4 @@
-org.signal.PutSignalMessage
 org.signal.ConsumeSignalMessage
+org.signal.DeleteSignalMessage
+org.signal.PutSignalMessage
 org.signal.PutSignalReaction
