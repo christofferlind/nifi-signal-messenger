@@ -406,6 +406,35 @@ public class SignalMessengerService extends AbstractControllerService implements
 	public boolean isListeningEvents() {
 		return listeningEvents.get();
 	}
+
+	@Override
+	public void sendReaction(String account, 
+							Optional<List<String>> recipients,
+							Optional<String> group,
+							String author,
+							long timestmap,
+							String emoji,
+							Optional<Boolean> remove) throws IOException, UnsupportedOperationException, ExecutionException {
+		
+		logDebugMessage("Sending signal reaction");
+		
+		Boolean removeReaction = remove.orElse(false);
+
+		JsonArray array = new JsonArray(recipients.get().size());
+		recipients.get().stream().distinct().forEach(array::add);
+		
+		JsonObject jsonParams = new JsonObject();
+		jsonParams.addProperty("account", account);
+		jsonParams.add("recipient", array);
+
+		jsonParams.addProperty("emoji", emoji);
+		
+		jsonParams.addProperty("target-timestamp", Long.valueOf(timestmap));
+		jsonParams.addProperty("target-author", author);
+		jsonParams.addProperty("remove", removeReaction);
+		
+		sendJsonRpc("sendReaction", jsonParams);
+	}
 	
 	@Override
 	public void sendMessage(String account, 

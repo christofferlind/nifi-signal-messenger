@@ -1,13 +1,17 @@
 package org.signal;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
@@ -54,6 +58,16 @@ public class PutSignalReaction extends AbstractProcessor {
 			.required(true)
 			.identifiesControllerService(SignalControllerService.class)
 			.build();
+	
+	public static final PropertyDescriptor SOURCE = new PropertyDescriptor
+			.Builder().name("Source")
+			.displayName("Source")
+			.description("From which number to send from")
+			.required(false)
+			.defaultValue("${" + Constants.ATTRIBUTE_RECEIVING_NUMBER + "}")
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
 
 	public static final PropertyDescriptor REACTION_EMOJI = new PropertyDescriptor
 			.Builder().name("ReactionEmoji")
@@ -65,6 +79,15 @@ public class PutSignalReaction extends AbstractProcessor {
 			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.defaultValue("")
+			.build();
+
+	public static final PropertyDescriptor REMOVE_REACTION = new PropertyDescriptor
+			.Builder().name("RemoveReaction")
+			.displayName("Remove reaction")
+			.description("")
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.defaultValue(Boolean.toString(Boolean.FALSE))
 			.build();
 
 	public static final Relationship SUCCESS = new Relationship.Builder()
@@ -85,7 +108,9 @@ public class PutSignalReaction extends AbstractProcessor {
 	protected void init(final ProcessorInitializationContext context) {
 		final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
 		descriptors.add(SIGNAL_SERVICE);
+		descriptors.add(SOURCE);
 		descriptors.add(REACTION_EMOJI);
+		descriptors.add(REMOVE_REACTION);
 		this.descriptors = Collections.unmodifiableList(descriptors);
 
 		final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -115,6 +140,17 @@ public class PutSignalReaction extends AbstractProcessor {
 		if ( flowFile == null ) {
 			return;
 		}
+		
+		String removeReactionString= context.getProperty(REMOVE_REACTION).getValue();
+		boolean removeReaction = "true".equalsIgnoreCase(removeReactionString);
+		
+		String source = context.getProperty(SOURCE).evaluateAttributeExpressions(flowFile).getValue();
+		if(Objects.isNull(source) || source.isBlank()) {
+			NullPointerException exc = new NullPointerException("Flowfile is source/account number: " + source);
+			getLogger().error(exc.getMessage(), exc);
+			session.transfer(flowFile, FAILURE);
+			return;
+		}
 
 		String targetAuthor = flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER);
 		if(Objects.isNull(targetAuthor)) {
@@ -140,35 +176,33 @@ public class PutSignalReaction extends AbstractProcessor {
 			return;
 		}
 
-//		try {
-//			targetTimestampString = targetTimestampString.trim();
-//			long targetTimestamp = Long.decode(targetTimestampString);
-//			
-//			SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-//			String emoji = context.getProperty(REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
-//			emoji = fixEmojiString(emoji);
-//
-//			boolean removeReaction = emoji.isEmpty();
-//			
-//			signalService.sendMessageReaction(emoji, removeReaction, targetAuthor, targetTimestamp, Arrays.asList(targetAuthor));
-//			
-//			session.transfer(flowFile, SUCCESS);
-//		} catch (NumberFormatException e) {
-//			getLogger().error(e.getMessage(), e);
-//			session.transfer(flowFile, FAILURE);
-//		} catch (IllegalArgumentException e) {
-//			getLogger().error(e.getMessage(), e);
-//			session.transfer(flowFile, FAILURE);
-//		} catch (IOException e) {
-//			getLogger().error(e.getMessage(), e);
-//			session.transfer(flowFile, FAILURE);
-//		} catch (EncapsulatedExceptions e) {
-//			getLogger().error(e.getMessage(), e);
-//			session.transfer(flowFile, FAILURE);
-//		} catch (InvalidNumberException e) {
-//			getLogger().error(e.getMessage(), e);
-//			session.transfer(flowFile, FAILURE);
-//		}
+		try {
+			targetTimestampString = targetTimestampString.trim();
+			long targetTimestamp = Long.decode(targetTimestampString);
+			
+			SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
+			String emoji = context.getProperty(REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
+			emoji = fixEmojiString(emoji);
+
+			signalService.sendReaction(source, Optional.of(Arrays.asList(targetAuthor)), null, targetAuthor, targetTimestamp, emoji, Optional.of(removeReaction));
+			
+			session.transfer(flowFile, SUCCESS);
+		} catch (NumberFormatException e) {
+			getLogger().error(e.getMessage(), e);
+			session.transfer(flowFile, FAILURE);
+		} catch (IllegalArgumentException e) {
+			getLogger().error(e.getMessage(), e);
+			session.transfer(flowFile, FAILURE);
+		} catch (IOException e) {
+			getLogger().error(e.getMessage(), e);
+			session.transfer(flowFile, FAILURE);
+		} catch (UnsupportedOperationException e) {
+			getLogger().error(e.getMessage(), e);
+			session.transfer(flowFile, FAILURE);
+		} catch (ExecutionException e) {
+			getLogger().error(e.getMessage(), e);
+			session.transfer(flowFile, FAILURE);
+		}
 	}
 
 	private String fixEmojiString(String emoji) {

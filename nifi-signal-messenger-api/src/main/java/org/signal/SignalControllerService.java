@@ -29,6 +29,14 @@ public interface SignalControllerService extends ControllerService {
 							Optional<List<String>> groups,
 							Optional<SignalQuote> quote,
 							Optional<SignalAttachment> attachment) throws IOException, UnsupportedOperationException, ExecutionException;
+
+	public void sendReaction(String account, 
+							Optional<List<String>> recipients, 
+							Optional<String> group, 
+							String author,
+							long timestmap, 
+							String emoji, 
+							Optional<Boolean> remove) throws IOException, UnsupportedOperationException, ExecutionException;
 	
 	public void addMessageListener(Consumer<SignalMessage> messageListener);
 
@@ -55,6 +63,7 @@ public interface SignalControllerService extends ControllerService {
 	
 	public JsonElement sendJsonRpc(String method, Map<String, String> params, String msgId) throws UnsupportedOperationException, IOException;
 	public JsonElement sendJsonRpc(String method, JsonObject params, String msgId) throws UnsupportedOperationException, IOException;
+
 
 	
 }

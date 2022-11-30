@@ -14,7 +14,6 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.signal.model.SignalMessage;
 import org.slf4j.Logger;
@@ -141,7 +140,7 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     }
 
     @Test
-    @Ignore("Manual testing")
+//    @Ignore("Manual testing")
     public void putMessageReply() throws InterruptedException, InitializationException {
     	if(isSettingsEmpty()) {
     		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
@@ -149,22 +148,24 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
 			return;
 		}
     	
-        TestRunner runnerConsume = TestRunners.newTestRunner(ConsumeSignalMessage.class);
+        TestRunner runnerConsumer = TestRunners.newTestRunner(ConsumeSignalMessage.class);
 
-        setSignaleService(runnerConsume);
-        runnerConsume.setProperty(ConsumeSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
-        runnerConsume.enableControllerService(serviceA);
-        assertTrue(runnerConsume.isControllerServiceEnabled(serviceA));
+        setSignaleService(runnerConsumer);
+        runnerConsumer.setProperty(ConsumeSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runnerConsumer.enableControllerService(serviceA);
+        assertTrue(runnerConsumer.isControllerServiceEnabled(serviceA));
         
-        runnerConsume.setRunSchedule(1_000);
-        runnerConsume.run(5);
+        runnerConsumer.setRunSchedule(1_000);
+        runnerConsumer.run(5);
     	
-        runnerConsume.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS);
+        runnerConsumer.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS);
 
-    	List<MockFlowFile> flowFiles = runnerConsume.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
+    	List<MockFlowFile> flowFiles = runnerConsumer.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
     	MockFlowFile flowFile = flowFiles.get(0);
     	flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP);
     	flowFile.assertAttributeExists(Constants.ATTRIBUTE_SENDER_NUMBER);
+    	
+    	LOGGER.info("Received message at {}: {}", flowFile.getAttribute(Constants.ATTRIBUTE_TIMESTAMP), flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE));
 
     	String content = "Testing quote: " + " " + Math.random();
     	
