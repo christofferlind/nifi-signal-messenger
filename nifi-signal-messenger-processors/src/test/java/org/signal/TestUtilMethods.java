@@ -44,8 +44,7 @@ public class TestUtilMethods {
     public void testSplitCommaEmpty() {
 		Optional<List<String>> list = Constants.getCommaSeparatedList("");
     	assertNotNull(list);
-    	assertTrue(list.isPresent());
-    	assertEquals(0, list.get().size());
+    	assertTrue(list.isEmpty());
     }
 
 	@Test

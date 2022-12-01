@@ -140,8 +140,11 @@ public class SignalMessengerService extends AbstractControllerService implements
         }
     };
 
-    private LoadingCache<String, Map<String, SignalIdentity>> cacheIdentities; 
-    private LoadingCache<String, Map<String, SignalGroup>> cacheGroups;
+    private final static Object LOCK_CACHE_IDENTITIES = new Object();
+    private volatile LoadingCache<String, Map<String, SignalIdentity>> cacheIdentities; 
+
+    private final static Object LOCK_CACHE_GROUPS = new Object();
+    private volatile LoadingCache<String, Map<String, SignalGroup>> cacheGroups;
 
 	private final AtomicBoolean listeningEvents = new AtomicBoolean(false); 
 	
@@ -167,14 +170,18 @@ public class SignalMessengerService extends AbstractControllerService implements
 		} catch (MalformedURLException e1) {
 			throw new InitializationException(e1);
 		}
+
+		synchronized (LOCK_CACHE_IDENTITIES) {
+			cacheIdentities = CacheBuilder.newBuilder()
+					.expireAfterAccess(6, TimeUnit.HOURS)
+					.build(loaderIdentities);
+		}
 		
-    	cacheIdentities = CacheBuilder.newBuilder()
-    			.expireAfterAccess(6, TimeUnit.HOURS)
-    			.build(loaderIdentities);
-		
-    	cacheGroups = CacheBuilder.newBuilder()
-    			.expireAfterAccess(6, TimeUnit.HOURS)
-    			.build(loaderGroups);
+		synchronized (LOCK_CACHE_GROUPS) {
+			cacheGroups = CacheBuilder.newBuilder()
+					.expireAfterAccess(6, TimeUnit.HOURS)
+					.build(loaderGroups);
+		}
 
     	String version = getSignalVersion();
     	if(version == null || version.isBlank())
@@ -259,7 +266,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 						Thread.currentThread().interrupt();
 						throw new InterruptedException();
 					}
-
+					
 					//Connection keep alive
 					if(line.equalsIgnoreCase(":")) {
 						if(log.isDebugEnabled()) log.debug("Connection keep-alive received");
@@ -277,7 +284,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 						String jsonData = line.substring(5);
 
 						JsonElement element = JsonParser.parseString(jsonData);
-						SignalData data = processData(element);
+						SignalData data = processEventData(element);
 						if(data != null) {
 							if(log.isDebugEnabled()) log.debug("Notifying listeners");
 							synchronized (LOCK_LISTENERS) {
@@ -296,7 +303,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		}
 	}
 
-	private SignalData processData(JsonElement element) {
+	private SignalData processEventData(JsonElement element) {
 		if(!element.isJsonObject()){
 			return null;
 		}
@@ -330,7 +337,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 			JsonObject dataMessage = jsonEnvelope.get("dataMessage").getAsJsonObject();
 			
-			if(dataMessage.has("message") && !dataMessage.get("message").isJsonNull()) {
+			if(isMessage(dataMessage)) {
 				String message = dataMessage.get("message").getAsString();
 	
 				SignalMessage msg = new SignalMessage();
@@ -339,7 +346,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 				msg.setExpires(dataMessage.get("expiresInSeconds").getAsLong());
 				se = msg;
 				if(log.isInfoEnabled()) log.info("Received message from: " + source);
-			} else if(dataMessage.has("reaction")) {
+			} else if(isReaction(dataMessage)) {
 				JsonObject obj = dataMessage.get("reaction").getAsJsonObject();
 				SignalReaction msg = new SignalReaction();
 				msg.setEmoji(obj.get("emoji").getAsString());
@@ -348,14 +355,17 @@ public class SignalMessengerService extends AbstractControllerService implements
 				msg.setRemove(obj.get("isRemove").getAsBoolean());
 				se = msg;
 				if(log.isInfoEnabled()) log.info("Received reaction from: " + source);
-			} else if(dataMessage.has("remoteDelete")) {
+			} else if(isRemoteDelete(dataMessage)) {
 				//Do nothing...
+				return null;
+			} else {
+				if(log.isWarnEnabled()) {
+					IllegalStateException exc = new IllegalStateException("Unsupported data message: " + dataMessage.toString());
+					log.warn(exc.getMessage(), exc);
+				}
 				return null;
 			}
 			
-			if(se == null)
-				throw new IllegalStateException("Unsupported message!?");
-
 			se.setSource(source);
 			se.setSourceName(sourceName);
 			se.setTimestamp(timestamp);
@@ -389,6 +399,19 @@ public class SignalMessengerService extends AbstractControllerService implements
 		return null;
 	}
 
+	private boolean isRemoteDelete(JsonObject dataMessage) {
+		return dataMessage.has("remoteDelete");
+	}
+
+	private boolean isReaction(JsonObject dataMessage) {
+		return dataMessage.has("reaction");
+	}
+
+	private boolean isMessage(JsonObject dataMessage) {
+		return dataMessage.has("message") && 
+				!dataMessage.get("message").isJsonNull();
+	}
+
 	private static final Optional<String> getFieldString(JsonObject jsonObject, String field) {
 		if(!jsonObject.has(field))
 			return Optional.empty();
@@ -417,20 +440,24 @@ public class SignalMessengerService extends AbstractControllerService implements
 			messageListeners.clear();
 //			messageListenersLastMessage.clear();
 		}
-		
-    	if(cacheIdentities != null) {
-    		try {
-				cacheIdentities.invalidateAll();
-			} catch (Throwable e) { }
-    		cacheIdentities = null;
-    	}
 
-    	if(cacheGroups != null) {
-    		try {
-    			cacheGroups.invalidateAll();
-			} catch (Throwable e) { }
-    		cacheGroups = null;
-    	}
+		synchronized (LOCK_CACHE_IDENTITIES) {
+			if(cacheIdentities != null) {
+				try {
+					cacheIdentities.invalidateAll();
+				} catch (Throwable e) { }
+				cacheIdentities = null;
+			}
+		}
+
+		synchronized (LOCK_CACHE_GROUPS) {
+			if(cacheGroups != null) {
+				try {
+					cacheGroups.invalidateAll();
+				} catch (Throwable e) { }
+				cacheGroups = null;
+			}
+		}
 	}
 	
 	public boolean isStarted() {
@@ -454,7 +481,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		
 		Boolean removeReaction = remove.orElse(false);
 
-		JsonObject jsonParams = new JsonObject();
+		JsonObject jsonParams = getAccountParam(account);
 
 		jsonParams.addProperty("emoji", emoji);
 		
@@ -469,12 +496,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 			JsonElement lastResult = null; //I know, I know... this is really ugly. Sending reactions to multiple groups is highly unlikely
 			for (Entry<String, List<SignalGroupMember>> entry : recipientsFromGroups.entrySet()) {
 				String groupUuid = entry.getKey();
-				List<SignalGroupMember> members = entry.getValue();
 
 				jsonParams.remove("recipient");
 				jsonParams.remove("group-id");
 				
-				jsonParams.add("recipient", toJsonArray(members));
+//				List<SignalGroupMember> members = entry.getValue();
+//				jsonParams.add("recipient", toGroupMembersJsonArray(account, members));
 				jsonParams.addProperty("group-id", groupUuid);
 				
 				lastResult = sendJsonRpc("sendReaction", jsonParams);
@@ -543,10 +570,10 @@ public class SignalMessengerService extends AbstractControllerService implements
 			
 			for (Entry<String, List<SignalGroupMember>> entry : recipientsFromGroups.entrySet()) {
 				String groupUuid = entry.getKey();
-				List<SignalGroupMember> members = entry.getValue();
 
 				JsonObject jsonParams = new JsonObject();
-				jsonParams.add("recipient", toJsonArray(members));
+//				List<SignalGroupMember> members = entry.getValue();
+//				jsonParams.add("recipient", toGroupMembersJsonArray(account, members));
 				jsonParams.addProperty("group-id", groupUuid);
 
 				if(quote.isPresent()) {
@@ -580,9 +607,15 @@ public class SignalMessengerService extends AbstractControllerService implements
 		return new JsonObject();
 	}
 	
-	private JsonArray toJsonArray(List<SignalGroupMember> members) {
+	@SuppressWarnings("unused")
+	private JsonArray toGroupMembersJsonArray(String account, List<SignalGroupMember> members) {
 		JsonArray array = new JsonArray(members.size());
-		members.stream().map(SignalGroupMember::getNumber).distinct().forEach(array::add);
+		members.stream()
+			.map(SignalGroupMember::getNumber)
+			.distinct()
+			.filter(num -> num != null && !num.equalsIgnoreCase(account))
+			.forEach(array::add);
+		
 		return array;
 	}
 
@@ -606,12 +639,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 			JsonElement lastResult = null; //I know, I know... this is really ugly. Sending reactions to multiple groups is highly unlikely
 			for (Entry<String, List<SignalGroupMember>> entry : recipientsFromGroups.entrySet()) {
 				String groupUuid = entry.getKey();
-				List<SignalGroupMember> members = entry.getValue();
 
-				jsonParams.remove("recipient");
+//				jsonParams.remove("recipient");
 				jsonParams.remove("group-id");
 				
-				jsonParams.add("recipient", toJsonArray(members));
+//				List<SignalGroupMember> members = entry.getValue();
+//				jsonParams.add("recipient", toGroupMembersJsonArray(account, members));
 				jsonParams.addProperty("group-id", groupUuid);
 				
 				lastResult = sendJsonRpc("remoteDelete", jsonParams);
@@ -712,26 +745,30 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	@Override
 	public Map<String, SignalIdentity> getIdentities(String account) throws UnsupportedOperationException, IOException, ExecutionException {
-		if(cacheIdentities == null)
-			return Collections.emptyMap();
-		
-		Map<String, SignalIdentity> result = cacheIdentities.get(account);
-		if(result == null)
-			return Collections.emptyMap();
-		
-		return result;
+		synchronized (LOCK_CACHE_IDENTITIES) {
+			if(cacheIdentities == null)
+				return Collections.emptyMap();
+
+			Map<String, SignalIdentity> result = cacheIdentities.get(account);
+			if(result == null)
+				return Collections.emptyMap();
+
+			return result;
+		}
 	}
 
 	@Override
 	public Map<String, SignalGroup> getGroups(String account) throws UnsupportedOperationException, IOException, ExecutionException {
-		if(cacheGroups == null)
-			return Collections.emptyMap();
-		
-		Map<String, SignalGroup> result = cacheGroups.get(account);
-		if(result == null)
-			return Collections.emptyMap();
-		
-		return result;
+		synchronized (LOCK_CACHE_GROUPS) {
+			if(cacheGroups == null)
+				return Collections.emptyMap();
+			
+			Map<String, SignalGroup> result = cacheGroups.get(account);
+			if(result == null)
+				return Collections.emptyMap();
+			
+			return result;
+		}
 	}
 	
 	private static final JsonObject getAccountParam(String account) {
@@ -776,7 +813,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		
 		ComponentLog log = getLogger();
 		
-		if(log.isDebugEnabled()) log.debug("Sending RPC message: " + rpc.get("method"));
+		if(log.isDebugEnabled()) log.debug("Sending RPC message: " + rpc.get("method") + " to account " + rpc.get("params").getAsJsonObject().get("account"));
 
 		// ************************
 		// Send request

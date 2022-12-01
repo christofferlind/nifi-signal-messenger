@@ -49,8 +49,10 @@ public class Constants {
 		Instant maxWait = Instant.now().plus(5, ChronoUnit.SECONDS);
 		while(!Thread.currentThread().isInterrupted()) {
 			String result = refContent.get();
-			if(result != null)
+			if(result != null) {
+				Thread.sleep(500);
 				return result;
+			}
 			
 			Thread.sleep(101);
 			
@@ -67,6 +69,11 @@ public class Constants {
 		if(string == null)
 			return Optional.empty();
 		
+		string = string.trim();
+		
+		if(string.isBlank())
+			return Optional.empty();
+		
 		String[] split = string.split(",");
 		List<String> recipients = new ArrayList<>(split.length);
 		for (String element : split) {
@@ -76,6 +83,9 @@ public class Constants {
 	
 			recipients.add(trimmed);
 		}
+		
+		if(recipients.isEmpty())
+			return Optional.empty();
 		
 		return Optional.of(recipients);
 	}

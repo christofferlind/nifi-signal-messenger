@@ -196,6 +196,7 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
 		}
 
     	runner.clearTransferState();
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA+"213123");
     	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberB+"12332,"+numberB);
     	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, "Testing " + PutSignalMessage.class.getSimpleName());
     	runner.enqueue(new byte[0]);

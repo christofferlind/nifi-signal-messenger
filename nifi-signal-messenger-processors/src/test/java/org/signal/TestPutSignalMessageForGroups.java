@@ -146,6 +146,7 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
     		refGroup.set(msg.getGroupName());
     		if(msg instanceof SignalMessage) {
 				SignalMessage signalMessage = (SignalMessage) msg;
+				System.out.println("TEST Received: " + signalMessage.toString() + " " + signalMessage.getMessage() + " @ " + signalMessage.getTimestamp());
 				refContent.set(signalMessage.getMessage());
 				counter.incrementAndGet();
 			}
