@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -78,7 +79,7 @@ import org.signal.model.SignalReaction;
 public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 
 
-	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
+	public static final PropertyDescriptor PROP_SIGNAL_SERVICE = new PropertyDescriptor
             .Builder().name("SignalService")
             .displayName("Signal Service")
             .description("The signal service to use")
@@ -86,7 +87,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .identifiesControllerService(SignalControllerService.class)
             .build();
 
-	public static final PropertyDescriptor IGNORE_UNTRUSTED_SENDER = new PropertyDescriptor
+	public static final PropertyDescriptor PROP_IGNORE_UNTRUSTED_SENDER = new PropertyDescriptor
             .Builder().name("IgnoreUntrustedSender")
             .displayName("Ignore untrusted sender")
             .description("If set to to true then only messages sent by a trusted sender identity (at least one) is transfered to success relationship.")
@@ -94,7 +95,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
             .defaultValue(Boolean.toString(Boolean.FALSE))
             .build();
 
-	public static final PropertyDescriptor IGNORE_REACTION = new PropertyDescriptor
+	public static final PropertyDescriptor PROP_IGNORE_REACTION = new PropertyDescriptor
             .Builder().name("IgnoreReaction")
             .displayName("Ignore reactions")
             .description("If set to to true then only messages is transfered to success relationship.")
@@ -131,9 +132,9 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
-        descriptors.add(SIGNAL_SERVICE);
-        descriptors.add(IGNORE_UNTRUSTED_SENDER);
-        descriptors.add(IGNORE_REACTION);
+        descriptors.add(PROP_SIGNAL_SERVICE);
+        descriptors.add(PROP_IGNORE_UNTRUSTED_SENDER);
+        descriptors.add(PROP_IGNORE_REACTION);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -154,9 +155,9 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
     
     @OnScheduled
     public void onScheduled(ProcessContext context) throws ProcessException {
-    	service = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-    	ignoreUntrustedMessages = context.getProperty(IGNORE_UNTRUSTED_SENDER).asBoolean();
-    	ignoreReactions = context.getProperty(IGNORE_REACTION).asBoolean();
+    	service = context.getProperty(PROP_SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
+    	ignoreUntrustedMessages = context.getProperty(PROP_IGNORE_UNTRUSTED_SENDER).asBoolean();
+    	ignoreReactions = context.getProperty(PROP_IGNORE_REACTION).asBoolean();
     }
     
     private void onError(Throwable e) {
@@ -266,7 +267,7 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 				attributes.put(Constants.ATTRIBUTE_MESSAGE_GROUP_ID, groupId);
 				SignalGroup signalGroup = service.getGroups(account).get(groupId);
 				if(signalGroup != null) {
-					attributes.put(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, signalGroup.getName());
+					attributes.put(Constants.ATTRIBUTE_MESSAGE_GROUP_TITLE, Optional.ofNullable(signalGroup.getName()).orElse(""));
 				}
 			}
 			

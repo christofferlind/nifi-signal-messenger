@@ -26,7 +26,7 @@ public class TestPutSignalReaction extends AbstractMultiNumberTest {
         runner = TestRunners.newTestRunner(PutSignalReaction.class);
 
         setSignaleService(runner);
-        runner.setProperty(PutSignalReaction.SIGNAL_SERVICE, serviceIdentifierA);
+        runner.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
         runner.enableControllerService(serviceA);
     }
 
@@ -64,13 +64,13 @@ public class TestPutSignalReaction extends AbstractMultiNumberTest {
     			);
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalReaction.SIGNAL_SERVICE, serviceIdentifierA);
-    	runner.setProperty(PutSignalReaction.SOURCE, numberA);
-    	runner.setProperty(PutSignalReaction.REACTION_EMOJI, "0x1F44D");
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runner.setProperty(PutSignalReaction.PROP_REACTION_EMOJI, "0x1F44D");
 		runner.enqueue(new byte[0], attributes);
     	runner.run();
 
-    	runner.assertAllFlowFilesTransferred(PutSignalReaction.SUCCESS, 1);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
     }
 
     @Test
@@ -96,14 +96,14 @@ public class TestPutSignalReaction extends AbstractMultiNumberTest {
     			);
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalReaction.SIGNAL_SERVICE, serviceIdentifierA);
-    	runner.setProperty(PutSignalReaction.SOURCE, numberA);
-    	runner.setProperty(PutSignalReaction.REACTION_EMOJI, "0x1F44D");
-    	runner.setProperty(PutSignalReaction.REMOVE_REACTION, Boolean.toString(Boolean.TRUE));
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runner.setProperty(PutSignalReaction.PROP_REACTION_EMOJI, "0x1F44D");
+    	runner.setProperty(PutSignalReaction.PROP_REMOVE_REACTION, Boolean.toString(Boolean.TRUE));
     	
     	runner.enqueue(new byte[0], attributes);
     	runner.run();
 
-    	runner.assertAllFlowFilesTransferred(PutSignalReaction.SUCCESS, 1);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
     }
 }

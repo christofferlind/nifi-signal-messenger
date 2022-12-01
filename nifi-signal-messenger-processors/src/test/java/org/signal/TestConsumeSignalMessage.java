@@ -39,7 +39,7 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
 		runner = TestRunners.newTestRunner(ConsumeSignalMessage.class);
 		setSignaleService(runner);
 		runner.enableControllerService(serviceA);
-        runner.setProperty(ConsumeSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runner.setProperty(ConsumeSignalMessage.PROP_SIGNAL_SERVICE, serviceIdentifierA);
         
         Instant maxWait = Instant.now().plus(5, ChronoUnit.SECONDS);
         while(!serviceA.isListeningEvents()) {

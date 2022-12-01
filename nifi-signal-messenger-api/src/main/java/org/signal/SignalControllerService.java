@@ -32,7 +32,7 @@ public interface SignalControllerService extends ControllerService {
 
 	public JsonElement sendReaction(String account, 
 							Optional<List<String>> recipients, 
-							Optional<String> group, 
+							Optional<List<String>> group, 
 							String author,
 							long timestmap, 
 							String emoji, 

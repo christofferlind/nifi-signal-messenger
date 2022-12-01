@@ -34,7 +34,7 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
 		runner = TestRunners.newTestRunner(PutSignalMessage.class);
 
         setSignaleService(runner);
-        runner.setProperty(PutSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runner.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
         runner.enableControllerService(serviceA);
 	}
 
@@ -73,16 +73,16 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
     	serviceA.addMessageListener(listener);
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.GROUPS, TEST_GROUP);
-    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
-    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_GROUPS, TEST_GROUP);
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, content);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
     	runner.enqueue("");
     	runner.run();
 
     	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS);
     	assertEquals(content, result);
     	assertEquals(TEST_GROUP, refGroup.get());
 	}
@@ -112,15 +112,15 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
     	serviceA.addMessageListener(listener);
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.GROUPS, TEST_GROUP);
-    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_GROUPS, TEST_GROUP);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
     	runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
     	runner.run();
 
     	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS);
     	assertEquals(content, result);
     	assertEquals(TEST_GROUP, refGroup.get());
 	}
@@ -146,7 +146,7 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
     		refGroup.set(msg.getGroupName());
     		if(msg instanceof SignalMessage) {
 				SignalMessage signalMessage = (SignalMessage) msg;
-				refContent.set(((SignalMessage) msg).getMessage());
+				refContent.set(signalMessage.getMessage());
 				counter.incrementAndGet();
 			}
     	};
@@ -154,16 +154,16 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
     	serviceA.addMessageListener(listener);
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.GROUPS, TEST_GROUP + ", " + TEST_GROUP);
-    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
-    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_GROUPS, TEST_GROUP + ", " + TEST_GROUP);
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, content);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
     	runner.enqueue("");
     	runner.run();
 
     	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS, 1);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
     	
     	assertEquals(content, result);
     	assertEquals(TEST_GROUP, refGroup.get());
@@ -180,10 +180,10 @@ public class TestPutSignalMessageForGroups extends AbstractMultiNumberTest {
 		}
 
 		runner.clearTransferState();
-		runner.setProperty(PutSignalMessage.GROUPS, TEST_GROUP + " missing" + Math.random()*10_000);
-		runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, "Testing Group Message");
+		runner.setProperty(AbstractSignalSenderProcessor.PROP_GROUPS, TEST_GROUP + " missing" + Math.random()*10_000);
+		runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, "Testing Group Message");
 		runner.enqueue(new byte[0]);
 		runner.run();
-		runner.assertAllFlowFilesTransferred(PutSignalMessage.FAILURE);
+		runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.FAILURE);
 	}
 }

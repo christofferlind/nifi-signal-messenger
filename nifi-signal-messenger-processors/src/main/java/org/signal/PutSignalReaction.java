@@ -1,32 +1,23 @@
 package org.signal;
 
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ExecutionException;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
-import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
-import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 //import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
@@ -39,7 +30,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 	@ReadsAttribute(attribute=Constants.ATTRIBUTE_SENDER_NUMBER, description="The target number to react to"),
 	@ReadsAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP, description="The target message timestamp to react to"),
 })
-public class PutSignalReaction extends AbstractProcessor {
+public class PutSignalReaction extends AbstractSignalSenderProcessor {
 	private static final Map<String, String> EMOJI_NAMES;
 	static {
 		Map<String, String> tmp = new LinkedHashMap<String, String>();
@@ -55,25 +46,7 @@ public class PutSignalReaction extends AbstractProcessor {
 		EMOJI_NAMES = Collections.unmodifiableMap(tmp);
 	}
 
-	public static final PropertyDescriptor SIGNAL_SERVICE = new PropertyDescriptor
-			.Builder().name("SignalService")
-			.displayName("Signal Service")
-			.description("The signal service to use")
-			.required(true)
-			.identifiesControllerService(SignalControllerService.class)
-			.build();
-	
-	public static final PropertyDescriptor SOURCE = new PropertyDescriptor
-			.Builder().name("Source")
-			.displayName("Source")
-			.description("From which number to send from")
-			.required(false)
-			.defaultValue("${" + Constants.ATTRIBUTE_RECEIVING_NUMBER + "}")
-			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
-			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-			.build();
-
-	public static final PropertyDescriptor REACTION_EMOJI = new PropertyDescriptor
+	public static final PropertyDescriptor PROP_REACTION_EMOJI = new PropertyDescriptor
 			.Builder().name("ReactionEmoji")
 			.displayName("Reaction emoji")
 			.description("Emoji to use in format 0x...., an empty value will remove the reaction. "
@@ -85,7 +58,7 @@ public class PutSignalReaction extends AbstractProcessor {
 			.defaultValue("")
 			.build();
 
-	public static final PropertyDescriptor REMOVE_REACTION = new PropertyDescriptor
+	public static final PropertyDescriptor PROP_REMOVE_REACTION = new PropertyDescriptor
 			.Builder().name("RemoveReaction")
 			.displayName("Remove reaction")
 			.description("")
@@ -94,48 +67,11 @@ public class PutSignalReaction extends AbstractProcessor {
 			.defaultValue(Boolean.toString(Boolean.FALSE))
 			.build();
 
-	public static final Relationship SUCCESS = new Relationship.Builder()
-			.name("success")
-			.description("Successful send")
-			.build();
-
-	public static final Relationship FAILURE = new Relationship.Builder()
-			.name("failure")
-			.description("Unsuccessful send")
-			.build();
-
-	private List<PropertyDescriptor> descriptors;
-
-	private Set<Relationship> relationships;
-
 	@Override
 	protected void init(final ProcessorInitializationContext context) {
-		final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
-		descriptors.add(SIGNAL_SERVICE);
-		descriptors.add(SOURCE);
-		descriptors.add(REACTION_EMOJI);
-		descriptors.add(REMOVE_REACTION);
-		this.descriptors = Collections.unmodifiableList(descriptors);
-
-		final Set<Relationship> relationships = new HashSet<Relationship>();
-		relationships.add(SUCCESS);
-		relationships.add(FAILURE);
-		this.relationships = Collections.unmodifiableSet(relationships);
-	}
-
-	@Override
-	public Set<Relationship> getRelationships() {
-		return this.relationships;
-	}
-
-	@Override
-	public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-		return descriptors;
-	}
-
-	@OnScheduled
-	public void onScheduled(final ProcessContext context) {
-
+		super.init(context);
+		descriptors.add(PROP_REACTION_EMOJI);
+		descriptors.add(PROP_REMOVE_REACTION);
 	}
 
 	@Override
@@ -145,69 +81,66 @@ public class PutSignalReaction extends AbstractProcessor {
 			return;
 		}
 		
-		String removeReactionString= context.getProperty(REMOVE_REACTION).getValue();
-		boolean removeReaction = "true".equalsIgnoreCase(removeReactionString);
-		
-		String source = context.getProperty(SOURCE).evaluateAttributeExpressions(flowFile).getValue();
-		if(Objects.isNull(source) || source.isBlank()) {
-			NullPointerException exc = new NullPointerException("Flowfile is source/account number: " + source);
-			getLogger().error(exc.getMessage(), exc);
-			session.transfer(flowFile, FAILURE);
-			return;
-		}
-
-		String targetAuthor = flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER);
-		if(Objects.isNull(targetAuthor)) {
-			NullPointerException exc = new NullPointerException("Flowfile is missing attribute: " + Constants.ATTRIBUTE_SENDER_NUMBER);
-			getLogger().error(exc.getMessage(), exc);
-			session.transfer(flowFile, FAILURE);
-			return;
-		}
-		
-		targetAuthor = targetAuthor.trim();
-		if(targetAuthor.isEmpty()) {
-			NullPointerException exc = new NullPointerException("Flowfile has an empty " + Constants.ATTRIBUTE_SENDER_NUMBER + " attribute");
-			getLogger().error(exc.getMessage(), exc);
-			session.transfer(flowFile, FAILURE);
-			return;
-		}
-		
-		String targetTimestampString = flowFile.getAttribute(Constants.ATTRIBUTE_TIMESTAMP);
-		if(targetTimestampString == null) {
-			NullPointerException exc = new NullPointerException("Flowfile is missing attribute: " + Constants.ATTRIBUTE_TIMESTAMP);
-			getLogger().error(exc.getMessage(), exc);
-			session.transfer(flowFile, FAILURE);
-			return;
-		}
-
 		try {
+			SignalControllerService signalService = getSignalService(context);
+			String account = getAccountNumber(context, flowFile);
+			
+			String removeReactionString= context.getProperty(PROP_REMOVE_REACTION).getValue();
+			boolean removeReaction = "true".equalsIgnoreCase(removeReactionString);
+			
+			List<String> vitalAttributes = Arrays.asList(
+					Constants.ATTRIBUTE_SENDER_NUMBER, 
+					Constants.ATTRIBUTE_TIMESTAMP);
+			
+			if(hasVitalAttributes(flowFile, vitalAttributes)) {
+				flowFile = session.putAttribute(flowFile, Constants.ATTRIBUTE_ERROR_MESSAGE, "Flow file is missing one of the following attributes: " + String.join(", ", vitalAttributes));
+				session.transfer(flowFile, FAILURE);
+				return;
+			}
+			
+			String targetAuthor = flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER);
+			String targetTimestampString = flowFile.getAttribute(Constants.ATTRIBUTE_TIMESTAMP);
+			
+			Optional<List<String>> groups = getList(context, flowFile, PROP_GROUPS);
+			Optional<List<String>> recipients = getList(context, flowFile, PROP_RECIPIENTS);
+
+			if(groups.isEmpty() && recipients.isEmpty())
+				throw new IllegalStateException(Constants.MSG_MISSING_RECIPIENT_AND_GROUP);
+			
 			targetTimestampString = targetTimestampString.trim();
 			long targetTimestamp = Long.decode(targetTimestampString);
 			
-			SignalControllerService signalService = context.getProperty(SIGNAL_SERVICE).asControllerService(SignalControllerService.class);
-			String emoji = context.getProperty(REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
+			String emoji = context.getProperty(PROP_REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
 			emoji = fixEmojiString(emoji);
 
-			signalService.sendReaction(source, Optional.of(Arrays.asList(targetAuthor)), null, targetAuthor, targetTimestamp, emoji, Optional.of(removeReaction));
+			signalService.sendReaction(account, recipients, groups, targetAuthor, targetTimestamp, emoji, Optional.of(removeReaction));
 			
 			session.transfer(flowFile, SUCCESS);
-		} catch (NumberFormatException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (IllegalArgumentException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (IOException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (UnsupportedOperationException e) {
-			getLogger().error(e.getMessage(), e);
-			session.transfer(flowFile, FAILURE);
-		} catch (ExecutionException e) {
+		} catch (Throwable e) {
 			getLogger().error(e.getMessage(), e);
 			session.transfer(flowFile, FAILURE);
 		}
 	}
+
+	private boolean hasVitalAttributes(FlowFile flowFile, List<String> asList) {
+		for (String attr : asList) {
+			String tmp = flowFile.getAttribute(attr);
+			
+			if(tmp == null) {
+				logError(new NullPointerException("Flowfile is missing attribute: " + attr));
+				return false;
+			}
+			
+			tmp = tmp.trim();
+			if(tmp.isBlank()) {
+				logError(new NullPointerException("Flowfile is missing attribute: " + attr));
+				return false;
+			}
+		}
+		
+		return true;
+	}
+
 
 	private String fixEmojiString(String emoji) {
 		if(emoji == null)

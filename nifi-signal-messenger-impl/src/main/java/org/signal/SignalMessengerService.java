@@ -13,10 +13,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -39,6 +40,7 @@ import org.apache.nifi.reporting.InitializationException;
 import org.signal.model.SignalAttachment;
 import org.signal.model.SignalData;
 import org.signal.model.SignalGroup;
+import org.signal.model.SignalGroupMember;
 import org.signal.model.SignalIdentity;
 import org.signal.model.SignalMessage;
 import org.signal.model.SignalQuote;
@@ -442,7 +444,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	@Override
 	public JsonElement sendReaction(String account, 
 							Optional<List<String>> recipients,
-							Optional<String> group,
+							Optional<List<String>> groups,
 							String author,
 							long timestmap,
 							String emoji,
@@ -452,12 +454,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		
 		Boolean removeReaction = remove.orElse(false);
 
-		JsonArray array = new JsonArray(recipients.get().size());
-		recipients.get().stream().distinct().forEach(array::add);
-		
 		JsonObject jsonParams = new JsonObject();
-		jsonParams.addProperty("account", account);
-		jsonParams.add("recipient", array);
 
 		jsonParams.addProperty("emoji", emoji);
 		
@@ -465,7 +462,69 @@ public class SignalMessengerService extends AbstractControllerService implements
 		jsonParams.addProperty("target-author", author);
 		jsonParams.addProperty("remove", removeReaction);
 		
-		return sendJsonRpc("sendReaction", jsonParams);
+		//If groups is present, send to their members
+		if(groups.isPresent() && groups.get().size() > 0) {
+			Map<String, List<SignalGroupMember>> recipientsFromGroups = getRecipientsFronGroups(account, groups.get());
+			
+			JsonElement lastResult = null; //I know, I know... this is really ugly. Sending reactions to multiple groups is highly unlikely
+			for (Entry<String, List<SignalGroupMember>> entry : recipientsFromGroups.entrySet()) {
+				String groupUuid = entry.getKey();
+				List<SignalGroupMember> members = entry.getValue();
+
+				jsonParams.remove("recipient");
+				jsonParams.remove("group-id");
+				
+				jsonParams.add("recipient", toJsonArray(members));
+				jsonParams.addProperty("group-id", groupUuid);
+				
+				lastResult = sendJsonRpc("sendReaction", jsonParams);
+			}
+			
+			return lastResult;
+		}
+		// Send to multi recipients
+		else {
+			JsonArray array = new JsonArray(recipients.get().size());
+			recipients.get().stream().distinct().forEach(array::add);
+			jsonParams.add("recipient", array);
+			return sendJsonRpc("sendReaction", jsonParams);
+		}
+	}
+	
+	protected Map<String, List<SignalGroupMember>> getRecipientsFronGroups(String account, Collection<String> groupsTitleOrId) throws UnsupportedOperationException, IOException, ExecutionException{
+		Map<String, List<SignalGroupMember>> result = new LinkedHashMap<>(groupsTitleOrId.size());
+
+		Map<String, SignalGroup> existingGroupsInAccount = getGroups(account);
+
+		if(existingGroupsInAccount == null || existingGroupsInAccount.isEmpty()) {
+			logError(new IllegalStateException("No groups found for account: " + account));
+			return Collections.emptyMap();
+		}
+		
+		for (String groupNameOrId : groupsTitleOrId) {
+			//Check if we find group using id first
+			Optional<SignalGroup> signalGroup = Optional.ofNullable(existingGroupsInAccount.get(groupNameOrId));
+			
+			//We didn't find a group using id, try with title
+			if(signalGroup.isEmpty()) {
+				signalGroup = existingGroupsInAccount.values().stream()
+												.filter(gi -> gi.getName().equalsIgnoreCase(groupNameOrId))
+												.findAny();
+			}
+
+			//If the group is still empty then the group does not exist
+			if(signalGroup.isEmpty()) {
+				logWarn("Could not find group id for group with name: \"" + groupNameOrId +"\"");
+				continue;
+			}
+			
+			SignalGroup foundGroup = signalGroup.get();
+			
+			String groupUuid = foundGroup.getId();
+			result.put(groupUuid, foundGroup.getMembers());
+		}	
+
+		return result;
 	}
 	
 	@Override
@@ -478,36 +537,16 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 		logDebugMessage("Sending signal message");
 
+		//If groups is present, send to their members
 		if(groups.isPresent() && groups.get().size() > 0) {
-			Map<String, SignalGroup> groupIds = getGroups(account);
-			if(groupIds == null || groupIds.isEmpty()) {
-				logError(new IllegalStateException("No groups found for account: " + account));
-				return new JsonObject();
-			}
+			Map<String, List<SignalGroupMember>> recipientsFromGroups = getRecipientsFronGroups(account, groups.get());
 			
-			Collection<SignalGroup> groupInformation = groupIds.values();
-			Collection<String> usedGroups = new HashSet<>();
-			
-			for (String groupNameOrId : groups.get()) {
-				Optional<SignalGroup> group = Optional.ofNullable(groupIds.get(groupNameOrId)); 
-						
-				if(group.isEmpty())
-					group = groupInformation
-							.stream()
-							.filter(gi -> gi.getName().equalsIgnoreCase(groupNameOrId))
-							.findAny();
-				
-				if(group.isEmpty()) {
-					logWarn("Could not find group id for group with name: \"" + groupNameOrId +"\"");
-					continue;
-				}
-				
-				String groupUuid = group.get().getId();
-				
-				if(usedGroups.contains(groupUuid))
-					continue;
-				
+			for (Entry<String, List<SignalGroupMember>> entry : recipientsFromGroups.entrySet()) {
+				String groupUuid = entry.getKey();
+				List<SignalGroupMember> members = entry.getValue();
+
 				JsonObject jsonParams = new JsonObject();
+				jsonParams.add("recipient", toJsonArray(members));
 				jsonParams.addProperty("group-id", groupUuid);
 
 				if(quote.isPresent()) {
@@ -518,8 +557,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 				}
 
 				sendMessage(account, message, jsonParams, attachment);
-				usedGroups.add(groupUuid);
-			}	
+			}
 		}
 		// Send to multi recipients
 		else {
@@ -542,6 +580,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 		return new JsonObject();
 	}
 	
+	private JsonArray toJsonArray(List<SignalGroupMember> members) {
+		JsonArray array = new JsonArray(members.size());
+		members.stream().map(SignalGroupMember::getNumber).distinct().forEach(array::add);
+		return array;
+	}
+
 	@Override
 	public JsonElement deleteMessage(
 			String account, 
@@ -551,16 +595,37 @@ public class SignalMessengerService extends AbstractControllerService implements
 		
 		logDebugMessage("Remotely delete signal message");
 		
-		JsonArray array = new JsonArray(recipients.get().size());
-		recipients.get().stream().distinct().forEach(array::add);
-		
 		JsonObject jsonParams = new JsonObject();
 		jsonParams.addProperty("account", account);
-		jsonParams.add("recipient", array);
-
 		jsonParams.addProperty("target-timestamp", Long.valueOf(timestmap));
 		
-		return sendJsonRpc("remoteDelete", jsonParams);
+		//If groups is present, send to their members
+		if(groups.isPresent() && groups.get().size() > 0) {
+			Map<String, List<SignalGroupMember>> recipientsFromGroups = getRecipientsFronGroups(account, groups.get());
+			
+			JsonElement lastResult = null; //I know, I know... this is really ugly. Sending reactions to multiple groups is highly unlikely
+			for (Entry<String, List<SignalGroupMember>> entry : recipientsFromGroups.entrySet()) {
+				String groupUuid = entry.getKey();
+				List<SignalGroupMember> members = entry.getValue();
+
+				jsonParams.remove("recipient");
+				jsonParams.remove("group-id");
+				
+				jsonParams.add("recipient", toJsonArray(members));
+				jsonParams.addProperty("group-id", groupUuid);
+				
+				lastResult = sendJsonRpc("remoteDelete", jsonParams);
+			}
+			
+			return lastResult;
+		}
+		// Send to multi recipients
+		else {
+			JsonArray array = new JsonArray(recipients.get().size());
+			recipients.get().stream().distinct().forEach(array::add);
+			jsonParams.add("recipient", array);
+			return sendJsonRpc("remoteDelete", jsonParams);
+		}
 	}
 
 

@@ -25,7 +25,7 @@ public class TestDeleteSignalMessage extends AbstractMultiNumberTest {
         runner = TestRunners.newTestRunner(DeleteSignalMessage.class);
 
         setSignaleService(runner);
-        runner.setProperty(DeleteSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runner.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
         runner.enableControllerService(serviceA);
     }
 
@@ -52,28 +52,28 @@ public class TestDeleteSignalMessage extends AbstractMultiNumberTest {
 
     	TestRunner runnerPut = TestRunners.newTestRunner(PutSignalMessage.class);
         setSignaleService(runnerPut);
-        runnerPut.setProperty(DeleteSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runnerPut.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
         runnerPut.enableControllerService(serviceA);
     	
     	runnerPut.clearTransferState();
-    	runnerPut.setProperty(PutSignalMessage.SOURCE, numberA);
-    	runnerPut.setProperty(PutSignalMessage.RECIPIENTS, numberManual);
-    	runnerPut.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
+    	runnerPut.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runnerPut.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberManual);
+    	runnerPut.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, content);
     	runnerPut.enqueue(new byte[0]);
     	runnerPut.run();
 
-    	runnerPut.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS, 1);
+    	runnerPut.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
     	
-    	MockFlowFile flowFile = runnerPut.getFlowFilesForRelationship(PutSignalMessage.SUCCESS).get(0);
+    	MockFlowFile flowFile = runnerPut.getFlowFilesForRelationship(AbstractSignalSenderProcessor.SUCCESS).get(0);
     	flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_TIMESTAMP, "");
     	
-    	runner.setProperty(DeleteSignalMessage.SOURCE, numberA);
-    	runner.setProperty(DeleteSignalMessage.RECIPIENTS, numberManual);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberManual);
     	runner.setProperty(DeleteSignalMessage.PROP_TIMESTAMP, flowFile.getAttribute(Constants.ATTRIBUTE_TIMESTAMP));
     	runner.enqueue(flowFile.getData());
     	runner.run();
     	
-    	runner.assertAllFlowFilesTransferred(DeleteSignalMessage.SUCCESS, 1);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
     }
 
 
@@ -89,28 +89,28 @@ public class TestDeleteSignalMessage extends AbstractMultiNumberTest {
 
     	TestRunner runnerPut = TestRunners.newTestRunner(PutSignalMessage.class);
     	setSignaleService(runnerPut);
-    	runnerPut.setProperty(DeleteSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+    	runnerPut.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
     	runnerPut.enableControllerService(serviceA);
 
     	runnerPut.clearTransferState();
-    	runnerPut.setProperty(PutSignalMessage.SOURCE, numberA);
-    	runnerPut.setProperty(PutSignalMessage.RECIPIENTS, numberB);
-    	runnerPut.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
+    	runnerPut.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runnerPut.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberB);
+    	runnerPut.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, content);
     	runnerPut.enqueue(new byte[0]);
     	runnerPut.run();
 
-    	runnerPut.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS, 1);
+    	runnerPut.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
 
-    	MockFlowFile flowFile = runnerPut.getFlowFilesForRelationship(PutSignalMessage.SUCCESS).get(0);
+    	MockFlowFile flowFile = runnerPut.getFlowFilesForRelationship(AbstractSignalSenderProcessor.SUCCESS).get(0);
     	flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_TIMESTAMP, "");
 
-    	runner.setProperty(DeleteSignalMessage.SOURCE, numberA);
-    	runner.setProperty(DeleteSignalMessage.RECIPIENTS, numberB);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberB);
     	runner.setProperty(DeleteSignalMessage.PROP_TIMESTAMP, flowFile.getAttribute(Constants.ATTRIBUTE_TIMESTAMP));
     	runner.enqueue(flowFile.getData());
     	runner.run();
 
-    	runner.assertAllFlowFilesTransferred(DeleteSignalMessage.SUCCESS, 1);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
     }
 
 }

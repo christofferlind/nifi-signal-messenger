@@ -35,7 +35,7 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
         runner = TestRunners.newTestRunner(PutSignalMessage.class);
 
         setSignaleService(runner);
-        runner.setProperty(PutSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runner.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
         runner.enableControllerService(serviceA);
     }
 
@@ -72,16 +72,16 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	serviceA.addMessageListener(listener);
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB);
-    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
-    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberB);
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, content);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
     	runner.enqueue(new byte[0]);
     	runner.run();
 
     	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS);
     	assertEquals(content, result);
     }
 
@@ -96,15 +96,15 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	String content = "Testing " + TestPutSignalMessage.class.getSimpleName() + " " + Math.random();
     	
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.RECIPIENTS, "");
-    	runner.setProperty(PutSignalMessage.GROUPS, "");
-    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
-    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, "");
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_GROUPS, "");
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, content);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
     	runner.enqueue(new byte[0]);
     	runner.run();
 
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.FAILURE, 1);
-    	MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutSignalMessage.FAILURE).get(0);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.FAILURE, 1);
+    	MockFlowFile flowFile = runner.getFlowFilesForRelationship(AbstractSignalSenderProcessor.FAILURE).get(0);
     	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_ERROR_MESSAGE, Constants.MSG_MISSING_RECIPIENT_AND_GROUP);
     }
 
@@ -131,18 +131,18 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	serviceA.addMessageListener(listener);
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB);
-    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberB);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
     	runner.enqueue(content.getBytes(StandardCharsets.UTF_8));
     	runner.run();
 
     	String result = Constants.getAndWait(refContent);
     	serviceA.removeMessageListener(listener);
     	
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS, 1);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
     	assertEquals(content, result);
     	
-    	MockFlowFile flowFile = runner.getFlowFilesForRelationship(PutSignalMessage.SUCCESS).get(0);
+    	MockFlowFile flowFile = runner.getFlowFilesForRelationship(AbstractSignalSenderProcessor.SUCCESS).get(0);
     	flowFile.assertAttributeNotEquals(Constants.ATTRIBUTE_TIMESTAMP, "");
     }
 
@@ -158,7 +158,7 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
         TestRunner runnerConsumer = TestRunners.newTestRunner(ConsumeSignalMessage.class);
 
         setSignaleService(runnerConsumer);
-        runnerConsumer.setProperty(ConsumeSignalMessage.SIGNAL_SERVICE, serviceIdentifierA);
+        runnerConsumer.setProperty(ConsumeSignalMessage.PROP_SIGNAL_SERVICE, serviceIdentifierA);
         runnerConsumer.enableControllerService(serviceA);
         assertTrue(runnerConsumer.isControllerServiceEnabled(serviceA));
         
@@ -177,14 +177,14 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	String content = "Testing quote: " + " " + Math.random();
     	
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.RECIPIENTS, flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER));
-    	runner.setProperty(PutSignalMessage.SOURCE, numberA);
-    	runner.setProperty(PutSignalMessage.MESSAGE_QUOTE, Boolean.toString(Boolean.TRUE));
-    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, content);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER));
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_QUOTE, Boolean.toString(Boolean.TRUE));
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, content);
     	runner.enqueue(flowFile);
     	runner.run();
 
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.SUCCESS);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS);
     }
 
 	@Test
@@ -196,12 +196,12 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
 		}
 
     	runner.clearTransferState();
-    	runner.setProperty(PutSignalMessage.RECIPIENTS, numberB+"12332,"+numberB);
-    	runner.setProperty(PutSignalMessage.MESSAGE_CONTENT, "Testing " + PutSignalMessage.class.getSimpleName());
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberB+"12332,"+numberB);
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, "Testing " + PutSignalMessage.class.getSimpleName());
     	runner.enqueue(new byte[0]);
     	runner.run();
-    	runner.assertAllFlowFilesTransferred(PutSignalMessage.FAILURE, 1);
-    	MockFlowFile ff = runner.getFlowFilesForRelationship(PutSignalMessage.FAILURE).get(0);
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.FAILURE, 1);
+    	MockFlowFile ff = runner.getFlowFilesForRelationship(AbstractSignalSenderProcessor.FAILURE).get(0);
     	ff.assertAttributeEquals(Constants.ATTRIBUTE_ERROR_MESSAGE, "Specified account does not exist (ErrorCode: -32602)");
     }
 

@@ -1,10 +1,14 @@
 package org.signal;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class Constants {
@@ -59,9 +63,9 @@ public class Constants {
 
 	static final String MSG_MISSING_RECIPIENT_AND_GROUP = "Neither groups nor recipients is specified";
 
-	public static final List<String> getCommaSeparatedList(String string) {
+	public static final Optional<List<String>> getCommaSeparatedList(String string) {
 		if(string == null)
-			return Collections.emptyList();
+			return Optional.empty();
 		
 		String[] split = string.split(",");
 		List<String> recipients = new ArrayList<>(split.length);
@@ -72,6 +76,25 @@ public class Constants {
 	
 			recipients.add(trimmed);
 		}
-		return recipients;
+		
+		return Optional.of(recipients);
+	}
+	
+	private static final int BUF_SIZE = 0x1000; // 4K
+
+	public static long copy(InputStream from, OutputStream to) throws IOException {
+		Objects.nonNull(from);
+		Objects.nonNull(to);
+		byte[] buf = new byte[BUF_SIZE];
+		long total = 0;
+		while (true) {
+			int r = from.read(buf);
+			if (r == -1) {
+				break;
+			}
+			to.write(buf, 0, r);
+			total += r;
+		}
+		return total;
 	}
 }
