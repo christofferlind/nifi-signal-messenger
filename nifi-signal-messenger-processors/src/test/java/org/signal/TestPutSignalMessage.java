@@ -3,11 +3,17 @@ package org.signal;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
@@ -206,5 +212,30 @@ public class TestPutSignalMessage extends AbstractMultiNumberTest {
     	ff.assertAttributeEquals(Constants.ATTRIBUTE_ERROR_MESSAGE, "Specified account does not exist (ErrorCode: -32602)");
     }
 
+	@Test
+	@Ignore("Manual test")
+	public void putMessageAttachment() throws IOException {
+		Path attachment = Paths.get("/tmp/attachment.png");
+		if(!Files.exists(attachment))
+			return;
+		
+		String contentType = Files.probeContentType(attachment);
+    	Map<String, String> attributes = Map.of(
+    			Constants.ATTRIBUTE_SENDER_NUMBER, numberManual,
+    			CoreAttributes.MIME_TYPE.key(), contentType
+    			);
+    	
+    	runner.clearTransferState();
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_SIGNAL_SERVICE, serviceIdentifierA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_ACCOUNT, numberA);
+    	runner.setProperty(AbstractSignalSenderProcessor.PROP_RECIPIENTS, numberManual);
+    	runner.setProperty(PutSignalMessage.PROP_MESSAGE_CONTENT, "Testing attachment");
+    	runner.setProperty(PutSignalMessage.PROP_ATTACHMENT, Boolean.toString(Boolean.TRUE));
+		runner.enqueue(Files.readAllBytes(attachment), attributes);
+    	runner.run();
+
+    	runner.assertAllFlowFilesTransferred(AbstractSignalSenderProcessor.SUCCESS, 1);
+
+	}
 
 }

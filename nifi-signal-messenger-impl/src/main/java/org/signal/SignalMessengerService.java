@@ -694,7 +694,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		jsonParams.addProperty("account", account);
 
 		if(attachment.isPresent()) {
-			jsonParams.addProperty("attachment", attachment.get().toString());
+			jsonParams.addProperty("attachment", attachment.get().toAttachmentParam());
 		}
 		
 		return sendJsonRpc("send", jsonParams);
