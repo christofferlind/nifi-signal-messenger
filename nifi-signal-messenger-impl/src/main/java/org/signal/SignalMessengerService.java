@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,6 +50,7 @@ import org.signal.model.SignalReaction;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.EvictingQueue;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -80,7 +82,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 	private final static Object LOCK_LISTENERS = new Object();
 
 	private Collection<Consumer<SignalData>> messageListeners = new LinkedHashSet<>(10);
-//	private Map<String, Long> messageListenersLastMessage = new HashMap<>(10);
+	private Map<String, Long> messageListenersLastMessage = new HashMap<>(10);
 
 	static {
 		final List<PropertyDescriptor> props = new ArrayList<>();
@@ -92,7 +94,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 	private volatile boolean started = false;
 
-//	private EvictingQueue<SignalMessage> messageQueue;
+	private EvictingQueue<SignalData> messageQueue;
 
 	private URL urlRpc;
 
@@ -190,7 +192,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 		this.started = true;
 		
 		if(getLogger().isDebugEnabled()) getLogger().debug("Starting receive message thread");
-//		messageQueue = EvictingQueue.create(1_000);
+		messageQueue = EvictingQueue.create(1_000);
 		receiveMessagesThread = new Thread(() -> {
 			try {
 				while(!Thread.currentThread().isInterrupted()) {
@@ -283,13 +285,19 @@ public class SignalMessengerService extends AbstractControllerService implements
 						if(log.isDebugEnabled()) log.debug("Processing data message");
 						String jsonData = line.substring(5);
 
-						JsonElement element = JsonParser.parseString(jsonData);
-						SignalData data = processEventData(element);
-						if(data != null) {
+						SignalData signalData = null;
+						try {
+							JsonElement element = JsonParser.parseString(jsonData);
+							signalData = processEventData(element);
+						} catch (Exception e) {
+							onError(new UnsupportedOperationException("Failed to process: " + jsonData, e));
+						}
+						
+						if(signalData != null) {
 							if(log.isDebugEnabled()) log.debug("Notifying listeners");
 							synchronized (LOCK_LISTENERS) {
-//								messageQueue.add(msg);
-								notifyListeners(data);
+								messageQueue.add(signalData);
+								notifyListeners(signalData);
 							}
 						}
 						continue;
@@ -331,28 +339,18 @@ public class SignalMessengerService extends AbstractControllerService implements
 		String source = getFieldString(jsonEnvelope, "sourceNumber").orElse("Unknown");
 
 		if(jsonEnvelope.has("dataMessage")) {
-			
 			logDebugMessage("Processing received data message");
 			SignalData se = null;
 
 			JsonObject dataMessage = jsonEnvelope.get("dataMessage").getAsJsonObject();
 			
 			if(isMessage(dataMessage)) {
-				String message = dataMessage.get("message").getAsString();
-	
-				SignalMessage msg = new SignalMessage();
-				msg.setMessage(message);
-				msg.setViewOnce(dataMessage.get("viewOnce").getAsBoolean());
-				msg.setExpires(dataMessage.get("expiresInSeconds").getAsLong());
+				SignalMessage msg = GSON.fromJson(dataMessage, SignalMessage.class);
 				se = msg;
 				if(log.isInfoEnabled()) log.info("Received message from: " + source);
 			} else if(isReaction(dataMessage)) {
 				JsonObject obj = dataMessage.get("reaction").getAsJsonObject();
-				SignalReaction msg = new SignalReaction();
-				msg.setEmoji(obj.get("emoji").getAsString());
-				msg.setTargetAutor(obj.get("targetAuthorNumber").getAsString());
-				msg.setTargetSentTimestamp(obj.get("targetSentTimestamp").getAsLong());
-				msg.setRemove(obj.get("isRemove").getAsBoolean());
+				SignalReaction msg = GSON.fromJson(obj, SignalReaction.class);
 				se = msg;
 				if(log.isInfoEnabled()) log.info("Received reaction from: " + source);
 			} else if(isRemoteDelete(dataMessage)) {
@@ -438,7 +436,7 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 		synchronized (LOCK_LISTENERS) {
 			messageListeners.clear();
-//			messageListenersLastMessage.clear();
+			messageListenersLastMessage.clear();
 		}
 
 		synchronized (LOCK_CACHE_IDENTITIES) {
@@ -705,21 +703,23 @@ public class SignalMessengerService extends AbstractControllerService implements
 		synchronized (LOCK_LISTENERS) {
 			messageListeners.add(Objects.requireNonNull(listener));
 
-//			// For new listener, send all cached messages
-//			Long lastMessageTimestamp = messageListenersLastMessage.get(listener.getClass().getCanonicalName());
-//			var stream = messageQueue.stream();
-//
-//			if(lastMessageTimestamp != null)
-//				stream = stream.filter(msg -> msg.getTimestamp() > lastMessageTimestamp);
-//
-//			try {
-//				stream.forEach(msg -> {
-//					listener.accept(msg);
-//					messageListenersLastMessage.put(listener.getClass().getCanonicalName(), msg.getTimestamp());
-//				});
-//			} catch (Throwable e) {
-//				logError(e);
-//			}
+			String listenerId = listener.getClass().getCanonicalName();
+			
+			// For new listener, send all cached messages
+			Long lastMessageTimestamp = messageListenersLastMessage.get(listenerId);
+			var stream = messageQueue.stream();
+
+			if(lastMessageTimestamp != null)
+				stream = stream.filter(msg -> msg.getTimestamp() > lastMessageTimestamp);
+
+			try {
+				stream.forEach(msg -> {
+					listener.accept(msg);
+					messageListenersLastMessage.merge(listenerId, msg.getTimestamp(), Long::max);
+				});
+			} catch (Throwable e) {
+				logError(e);
+			}
 		}
 		
 		logDebugMessage("Added message listener");

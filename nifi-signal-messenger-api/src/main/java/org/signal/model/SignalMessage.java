@@ -1,9 +1,15 @@
 package org.signal.model;
 
+import com.google.gson.annotations.SerializedName;
+
 public class SignalMessage extends SignalData {
+	@SerializedName("message")
 	private String message;
 	
+	@SerializedName("expiresInSeconds")
 	private long expires = -1;
+	
+	@SerializedName("viewOnce")
 	private boolean viewOnce = false;
 
 	public String getMessage() {

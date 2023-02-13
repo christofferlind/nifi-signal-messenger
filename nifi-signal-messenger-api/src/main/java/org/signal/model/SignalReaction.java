@@ -1,9 +1,19 @@
 package org.signal.model;
 
+import com.google.gson.annotations.SerializedName;
+
 public class SignalReaction extends SignalData {
-	private String emoji;
-	private String targetAuthor;
-	private long targetSentTimestamp;
+	
+	@SerializedName("emoji")
+	private String emoji = null;
+	
+	@SerializedName("targetAuthorNumber")
+	private String targetAuthor = null;
+	
+	@SerializedName("targetSentTimestamp")
+	private long targetSentTimestamp = -1;
+	
+	@SerializedName("isRemove")
 	private boolean remove;
 	
 	public String getEmoji() {
