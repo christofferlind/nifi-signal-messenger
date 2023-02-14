@@ -26,7 +26,7 @@ public class SignalReaction extends SignalData {
 	
 	@Override
 	public String toString() {
-		return String.format("Reaction (%s) from %s to %s", getEmoji(), getSource(), getAccount());
+		return String.format("Reaction (%s) from %s to %s", getEmoji(), getSourceNumber(), getAccount());
 	}
 
 	public void setTargetAutor(String targetAuthor) {

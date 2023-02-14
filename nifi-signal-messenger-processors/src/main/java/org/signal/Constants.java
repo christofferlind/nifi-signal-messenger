@@ -26,6 +26,8 @@ public class Constants {
 	public static final String ATTRIBUTE_ACCOUNT_NUMBER = 						"signal.account.number";
 	public static final String ATTRIBUTE_RECEIVING_NUMBER = 					"signal.receiving.number";
 	public static final String ATTRIBUTE_SENDER_NUMBER = 						"signal.sender.number";
+	public static final String ATTRIBUTE_SENDER_UUID = 							"signal.sender.uuid";
+	public static final String ATTRIBUTE_SENDER_NAME = 							"signal.sender.name";
 	public static final String ATTRIBUTE_SENDER_VERIFIED = 						"signal.sender.verified";
 	public static final String ATTRIBUTE_SENDER_IDENTIFIED = 					"signal.sender.identified";
 

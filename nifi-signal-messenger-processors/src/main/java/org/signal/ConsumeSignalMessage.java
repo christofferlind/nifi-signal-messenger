@@ -59,7 +59,9 @@ import org.signal.model.SignalReaction;
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_TIMESTAMP_STRING, description="Time when the message was sent (pretty printed to local time)"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_ACCOUNT_NUMBER, description="The number that received the message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_RECEIVING_NUMBER, description="The number that received the message"),
-	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_NUMBER, description="The number that sent the message, this is not always resolved"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_UUID, description="The UUID of the contact that sent the message"),
+	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_NAME, description="The name of the contact that sent the message"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_VERIFIED, description="If the sender number is verified. One of: DEFAULT (trusted but not yet verified), VERIFIED (trusted and verified), UNVERIFIED (untrusted)"),
 //	@WritesAttribute(attribute=Constants.ATTRIBUTE_SENDER_IDENTIFIED, description="If the sender number is identified"),
 	@WritesAttribute(attribute=Constants.ATTRIBUTE_ERROR_MESSAGE, description="If an error occurs, the detailed error message will be put in this attribute"),
@@ -194,10 +196,10 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 	private void handleMessage(SignalData message) {
 		ComponentLog logger = getLogger();
 		
-		if(logger.isDebugEnabled()) logger.debug("Received signal message from " + message.getSource());
+		if(logger.isDebugEnabled()) logger.debug("Received signal message from " + message.getSourceNumber());
 		
 		if(ignoreReactions && message instanceof SignalReaction) {
-			if(logger.isDebugEnabled()) logger.debug("Ignoring reaction: " + message.getSource());
+			if(logger.isDebugEnabled()) logger.debug("Ignoring reaction: " + message.getSourceNumber());
 			return;
 		}
 
@@ -210,12 +212,16 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 		Map<String, String> attributes = new LinkedHashMap<>(12);
 			
 		String account = message.getAccount();
-		String source = message.getSource();
+		String sourceNumber = message.getSourceNumber();
+		String sourceUuid = message.getSourceUuid();
+		String sourceName = message.getSourceName();
 		
 		try {
-			attributes.put(Constants.ATTRIBUTE_ACCOUNT_NUMBER, 			message.getAccount());
-			attributes.put(Constants.ATTRIBUTE_RECEIVING_NUMBER, 		message.getAccount());
-			attributes.put(Constants.ATTRIBUTE_SENDER_NUMBER, 			source);
+			attributes.put(Constants.ATTRIBUTE_ACCOUNT_NUMBER, 			account);
+			attributes.put(Constants.ATTRIBUTE_RECEIVING_NUMBER, 		account);
+			attributes.put(Constants.ATTRIBUTE_SENDER_NUMBER, 			sourceNumber);
+			attributes.put(Constants.ATTRIBUTE_SENDER_UUID, 			sourceUuid);
+			attributes.put(Constants.ATTRIBUTE_SENDER_NAME, 			sourceName);
 			attributes.put(Constants.ATTRIBUTE_TIMESTAMP, 				Long.toString(message.getTimestamp()));
 			
 			try {
@@ -232,14 +238,14 @@ public class ConsumeSignalMessage extends AbstractSessionFactoryProcessor {
 			// ********************************
 			attributes.put(Constants.ATTRIBUTE_SENDER_VERIFIED, 		"UNTRUSTED");
 			
-			SignalIdentity identity = service.getIdentities(account).get(source);
+			SignalIdentity identity = service.getIdentities(account).get(sourceNumber);
 			if(identity != null) {
 				attributes.put(Constants.ATTRIBUTE_SENDER_VERIFIED, 	identity.getTrustLevel());
 			}
 			
 			if(ignoreUntrustedMessages && isUntrusted(attributes)) {
 				if(logger.isWarnEnabled()) 
-					logger.warn("Message recieved from untrusted number: " + source);
+					logger.warn("Message recieved from untrusted number: " + sourceNumber);
 				return;
 			}
 			

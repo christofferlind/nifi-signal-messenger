@@ -56,6 +56,8 @@ public class TestUtilMethods {
 
 	public static final void assertBasicAttributes(MockFlowFile flowFile, String numberA, String numberB) {
 		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_SENDER_NUMBER, numberB);
+		flowFile.assertAttributeExists(Constants.ATTRIBUTE_SENDER_UUID);
+		flowFile.assertAttributeExists(Constants.ATTRIBUTE_SENDER_NAME);
 		flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP);
 		flowFile.assertAttributeExists(Constants.ATTRIBUTE_TIMESTAMP_STRING);
 		flowFile.assertAttributeEquals(Constants.ATTRIBUTE_ACCOUNT_NUMBER, numberA);

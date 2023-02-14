@@ -33,7 +33,7 @@ public class SignalMessage extends SignalData {
 
 	@Override
 	public String toString() {
-		return String.format("Msg from %s to %s", getSource(), getAccount());
+		return String.format("Msg from %s to %s", getSourceNumber(), getAccount());
 	}
 	
 }

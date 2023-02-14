@@ -1,11 +1,14 @@
 package org.signal;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -206,4 +209,54 @@ public class TestConsumeSignalMessage extends AbstractMultiNumberTest {
     	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_AUTHOR, numberA);
     	flowFile.assertAttributeEquals(Constants.ATTRIBUTE_MESSAGE_REACTION_TARGET_TIMESTAMP, Long.toString(timestamp));
     }
+    
+    @Test
+    public void consumeMessageUsingMessageQueue() throws UnsupportedOperationException, IOException, ExecutionException, InterruptedException {
+    	if(isSettingsEmpty()) {
+    		IllegalStateException exc = new IllegalStateException("No configuration set, skipping test");
+    		LOGGER.warn(exc.getMessage(), exc);
+			return;
+		}
+
+    	runner.clearTransferState();
+    	int maxMessages = 5;
+    	Collection<String> messageCounter = new LinkedList<>();
+    	
+    	//First, send messages with a random message
+    	for (int i = 0; i < maxMessages; i++) {
+    		String message = "Testing consumeMessage " + Double.toString(Math.random());
+    		
+    		serviceA.sendMessage(
+    				numberB, 
+    				message, 
+    				Optional.of(Arrays.asList(numberA)), 
+    				Optional.empty(), 
+    				Optional.empty(), 
+    				Optional.empty());
+    		
+    		messageCounter.add(message);
+
+    		Thread.sleep(101);
+		}
+    	
+    	Thread.sleep(1_000);
+    	runner.run(1, false, true, 5_000);
+    	Thread.sleep(1_000);
+    	runner.stop();
+    	
+    	runner.assertAllFlowFilesTransferred(ConsumeSignalMessage.SUCCESS, maxMessages);
+    	
+    	
+    	List<MockFlowFile> flowFiles = runner.getFlowFilesForRelationship(ConsumeSignalMessage.SUCCESS);
+    	// Check that all messages was received. I'm not sure the come at the same order
+    	// Remove the received messages from the messageCounter and check that we have received all 
+    	for (MockFlowFile flowFile : flowFiles) {
+    		TestUtilMethods.assertBasicAttributes(flowFile, numberA, numberB);
+    		String message = flowFile.getAttribute(Constants.ATTRIBUTE_MESSAGE);
+    		messageCounter.remove(message);
+		}
+    	
+    	assertTrue(messageCounter.isEmpty());
+    }
+    
 }

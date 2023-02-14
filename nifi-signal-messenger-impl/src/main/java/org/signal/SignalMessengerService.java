@@ -336,7 +336,8 @@ public class SignalMessengerService extends AbstractControllerService implements
 
 		long timestamp = jsonEnvelope.get("timestamp").getAsLong();
 		String sourceName = getFieldString(jsonEnvelope, "sourceName").orElse("Unknown");
-		String source = getFieldString(jsonEnvelope, "sourceNumber").orElse("Unknown");
+		String sourceUuid = getFieldString(jsonEnvelope, "sourceUuid").orElse("Unknown");
+		String sourceNumber = getFieldString(jsonEnvelope, "sourceNumber").orElse("Unknown");
 
 		if(jsonEnvelope.has("dataMessage")) {
 			logDebugMessage("Processing received data message");
@@ -347,12 +348,12 @@ public class SignalMessengerService extends AbstractControllerService implements
 			if(isMessage(dataMessage)) {
 				SignalMessage msg = GSON.fromJson(dataMessage, SignalMessage.class);
 				se = msg;
-				if(log.isInfoEnabled()) log.info("Received message from: " + source);
+				if(log.isInfoEnabled()) log.info("Received message from: " + sourceNumber);
 			} else if(isReaction(dataMessage)) {
 				JsonObject obj = dataMessage.get("reaction").getAsJsonObject();
 				SignalReaction msg = GSON.fromJson(obj, SignalReaction.class);
 				se = msg;
-				if(log.isInfoEnabled()) log.info("Received reaction from: " + source);
+				if(log.isInfoEnabled()) log.info("Received reaction from: " + sourceNumber);
 			} else if(isRemoteDelete(dataMessage)) {
 				//Do nothing...
 				return null;
@@ -364,8 +365,9 @@ public class SignalMessengerService extends AbstractControllerService implements
 				return null;
 			}
 			
-			se.setSource(source);
+			se.setSourceNumber(sourceNumber);
 			se.setSourceName(sourceName);
+			se.setSourceUuid(sourceUuid);
 			se.setTimestamp(timestamp);
 			se.setAccount(account);
 
@@ -414,7 +416,11 @@ public class SignalMessengerService extends AbstractControllerService implements
 		if(!jsonObject.has(field))
 			return Optional.empty();
 		
-		return Optional.of(jsonObject.get(field).getAsString());
+		JsonElement element = jsonObject.get(field);
+		if(element.isJsonNull())
+			return Optional.empty();
+		
+		return Optional.of(element.getAsString());
 	}
 
 	public void onError(Throwable e) {
