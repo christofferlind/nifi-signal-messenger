@@ -43,6 +43,11 @@ public class PutSignalReaction extends AbstractSignalSenderProcessor {
 		tmp.put("fire", 			"0x1F525");
 		tmp.put("star", 			"0x2B50");
 		tmp.put("eyes", 			"0x1F440");
+		
+		tmp.put("circle-red", 		"0x1F534");
+		tmp.put("circle-yellow", 	"0x1F7E1");
+		tmp.put("circle-green", 	"0x1F7E2");
+		
 		EMOJI_NAMES = Collections.unmodifiableMap(tmp);
 	}
 
@@ -58,6 +63,26 @@ public class PutSignalReaction extends AbstractSignalSenderProcessor {
 			.defaultValue("")
 			.build();
 
+	public static final PropertyDescriptor PROP_MESSAGE_REACTION_TIMESTAMP_ATTRIBUTE = new PropertyDescriptor
+			.Builder().name("ReactionTimestampAttribute")
+			.displayName("Reaction timestamp")
+			.description("Attribute on the flowfile that contains the message timestamp to react to")
+			.required(true)
+			.defaultValue(Constants.ATTRIBUTE_TIMESTAMP)
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
+
+	public static final PropertyDescriptor PROP_MESSAGE_REACTION_SENDER_ATTRIBUTE = new PropertyDescriptor
+			.Builder().name("ReactionSenderAttribute")
+			.displayName("Reaction sender")
+			.description("Attribute on the flowfile that contains the author number to react to")
+			.required(true)
+			.defaultValue(Constants.ATTRIBUTE_SENDER_NUMBER)
+			.addValidator(StandardValidators.ATTRIBUTE_EXPRESSION_LANGUAGE_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
+
 	public static final PropertyDescriptor PROP_REMOVE_REACTION = new PropertyDescriptor
 			.Builder().name("RemoveReaction")
 			.displayName("Remove reaction")
@@ -66,11 +91,16 @@ public class PutSignalReaction extends AbstractSignalSenderProcessor {
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.defaultValue(Boolean.toString(Boolean.FALSE))
 			.build();
-
+	
 	@Override
 	protected void init(final ProcessorInitializationContext context) {
 		super.init(context);
+		descriptors.remove(PROP_RECIPIENTS);
+		descriptors.remove(PROP_GROUPS);
+		
 		descriptors.add(PROP_REACTION_EMOJI);
+		descriptors.add(PROP_MESSAGE_REACTION_SENDER_ATTRIBUTE);
+		descriptors.add(PROP_MESSAGE_REACTION_TIMESTAMP_ATTRIBUTE);
 		descriptors.add(PROP_REMOVE_REACTION);
 	}
 
@@ -88,21 +118,34 @@ public class PutSignalReaction extends AbstractSignalSenderProcessor {
 			String removeReactionString= context.getProperty(PROP_REMOVE_REACTION).getValue();
 			boolean removeReaction = "true".equalsIgnoreCase(removeReactionString);
 			
-			List<String> vitalAttributes = Arrays.asList(
-					Constants.ATTRIBUTE_SENDER_NUMBER, 
-					Constants.ATTRIBUTE_TIMESTAMP);
+			String reactSenderAttribute = context
+					.getProperty(PROP_MESSAGE_REACTION_SENDER_ATTRIBUTE)
+					.evaluateAttributeExpressions(flowFile)
+					.getValue();
 			
-			if(hasVitalAttributes(flowFile, vitalAttributes)) {
+			String reactTimestampAttribute = context
+					.getProperty(PROP_MESSAGE_REACTION_TIMESTAMP_ATTRIBUTE)
+					.evaluateAttributeExpressions(flowFile)
+					.getValue();
+			
+			List<String> vitalAttributes = Arrays.asList(	reactSenderAttribute, 
+															reactTimestampAttribute);
+
+			if(!hasVitalAttributes(flowFile, vitalAttributes)) {
 				flowFile = session.putAttribute(flowFile, Constants.ATTRIBUTE_ERROR_MESSAGE, "Flow file is missing one of the following attributes: " + String.join(", ", vitalAttributes));
 				session.transfer(flowFile, FAILURE);
 				return;
 			}
 			
-			String targetAuthor = flowFile.getAttribute(Constants.ATTRIBUTE_SENDER_NUMBER);
-			String targetTimestampString = flowFile.getAttribute(Constants.ATTRIBUTE_TIMESTAMP);
+			String targetAuthor = flowFile.getAttribute(reactSenderAttribute);
+			String targetTimestampString = flowFile.getAttribute(reactTimestampAttribute);
 			
-			Optional<List<String>> groups = getList(context, flowFile, PROP_GROUPS);
-			Optional<List<String>> recipients = getList(context, flowFile, PROP_RECIPIENTS);
+			String attribute = flowFile.getAttribute(reactSenderAttribute);
+			Optional<List<String>> groups = Optional.empty();
+			Optional<List<String>> recipients = Optional.of(Arrays.asList(attribute));
+			
+//			Optional<List<String>> groups = getList(context, flowFile, PROP_GROUPS);
+//			Optional<List<String>> recipients = getList(context, flowFile, PROP_RECIPIENTS);
 
 			if(groups.isEmpty() && recipients.isEmpty())
 				throw new IllegalStateException(Constants.MSG_MISSING_RECIPIENT_AND_GROUP);
@@ -113,8 +156,15 @@ public class PutSignalReaction extends AbstractSignalSenderProcessor {
 			String emoji = context.getProperty(PROP_REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
 			emoji = fixEmojiString(emoji);
 
-			signalService.sendReaction(account, recipients, groups, targetAuthor, targetTimestamp, emoji, Optional.of(removeReaction));
-			
+			signalService.sendReaction(
+										account, 
+										recipients, 
+										groups, 
+										targetAuthor, 
+										targetTimestamp, 
+										emoji, 
+										Optional.of(removeReaction));
+
 			session.transfer(flowFile, SUCCESS);
 		} catch (Throwable e) {
 			getLogger().error(e.getMessage(), e);
