@@ -155,6 +155,9 @@ public class PutSignalMessage extends AbstractSignalSenderProcessor {
 															Optional.ofNullable(quote), 
 															Optional.ofNullable(attachment));
 			
+			if(getLogger().isDebugEnabled())
+				getLogger().debug(result.toString());
+
 			if(result.isJsonObject()) {
 				JsonObject object = result.getAsJsonObject();
 				if(object.has("timestamp")) {

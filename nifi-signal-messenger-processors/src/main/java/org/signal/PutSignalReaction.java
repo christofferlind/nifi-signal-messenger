@@ -23,6 +23,8 @@ import org.apache.nifi.processor.util.StandardValidators;
 //import org.whispersystems.signalservice.api.push.exceptions.EncapsulatedExceptions;
 //import org.whispersystems.signalservice.api.util.InvalidNumberException;
 
+import com.google.gson.JsonElement;
+
 @Tags({ "Signal", "Put", "Message", "Send", "Reaction" })
 @CapabilityDescription("Sends a reaction on Signal message. This reads the attributes that ConsumeSignalMessage produces.")
 @SeeAlso({ConsumeSignalMessage.class})
@@ -156,14 +158,17 @@ public class PutSignalReaction extends AbstractSignalSenderProcessor {
 			String emoji = context.getProperty(PROP_REACTION_EMOJI).evaluateAttributeExpressions(flowFile).getValue();
 			emoji = fixEmojiString(emoji);
 
-			signalService.sendReaction(
-										account, 
-										recipients, 
-										groups, 
-										targetAuthor, 
-										targetTimestamp, 
-										emoji, 
-										Optional.of(removeReaction));
+			JsonElement result = signalService.sendReaction(
+													account, 
+													recipients, 
+													groups, 
+													targetAuthor, 
+													targetTimestamp, 
+													emoji, 
+													Optional.of(removeReaction));
+			
+			if(getLogger().isDebugEnabled())
+				getLogger().debug(result.toString());
 
 			session.transfer(flowFile, SUCCESS);
 		} catch (Throwable e) {

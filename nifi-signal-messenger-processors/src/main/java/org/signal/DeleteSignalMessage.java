@@ -17,6 +17,8 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 
+import com.google.gson.JsonElement;
+
 @Tags({ "Signal", "Delete", "Message", "Remove" })
 @CapabilityDescription("Remote delete a message on Signal")
 @SeeAlso({})
@@ -62,10 +64,12 @@ public class DeleteSignalMessage extends AbstractSignalSenderProcessor {
 			if(groups.isEmpty() && recipients.isEmpty())
 				throw new IllegalStateException(Constants.MSG_MISSING_RECIPIENT_AND_GROUP);
 			
-			signalService.deleteMessage(account, 
-					recipients, 
-					groups, 
-					Long.decode(timestampString));
+			JsonElement result = signalService.deleteMessage(account, 
+															recipients, 
+															groups, 
+															Long.decode(timestampString));
+			if(getLogger().isDebugEnabled())
+				getLogger().debug(result.toString());
 			
 			session.transfer(flowFile, SUCCESS);
 		} catch (Exception e) {
