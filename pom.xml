@@ -23,12 +23,12 @@
     </parent>
     
     <properties>
-    	<nifi.signal.messenger.version>2.3</nifi.signal.messenger.version>
+    	<nifi.signal.messenger.version>2.4</nifi.signal.messenger.version>
     	<nifi.version>1.15.3</nifi.version>
     </properties>
 
 	<artifactId>nifi-signal-messenger</artifactId>
-	<version>2.3</version>
+	<version>2.4</version>
     <packaging>pom</packaging>
 
     <modules>
