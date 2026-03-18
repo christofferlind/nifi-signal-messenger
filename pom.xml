@@ -18,13 +18,13 @@
 
     <parent>
         <groupId>org.apache.nifi</groupId>
-        <artifactId>nifi-nar-bundles</artifactId>
-        <version>1.15.3</version>
+        <artifactId>nifi-extension-bundles</artifactId>
+        <version>2.4.0</version>
     </parent>
     
     <properties>
     	<nifi.signal.messenger.version>2.4</nifi.signal.messenger.version>
-    	<nifi.version>1.15.3</nifi.version>
+    	<nifi.version>2.4.0</nifi.version>
     </properties>
 
 	<artifactId>nifi-signal-messenger</artifactId>

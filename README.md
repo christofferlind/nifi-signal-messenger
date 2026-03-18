@@ -22,11 +22,12 @@ Then either register a number (as described in the how-to) or make a link to an 
 --- TODO ---
 
 ## Building from source
- 
-	mvn package
 
-and grab the following two nars and drop them in either ''lib'' or ''extensions'' directory in your
-NiFi installation.
+Requires Java 21+.
 
-	./nifi-signal-messenger-nar/target/nifi-signal-messenger-nar-<version>.nar 
+	./mvnw package
+
+Copy the NARs to your NiFi installation's `extensions` directory:
+
+	./nifi-signal-messenger-nar/target/nifi-signal-messenger-nar-<version>.nar
 	./nifi-signal-messenger-api-nar/target/nifi-signal-messenger-api-nar-<version>.nar

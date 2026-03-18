@@ -1,8 +1,8 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
+    "java.configuration.updateBuildConfiguration": "automatic",
     "java.test.config": {
         "name": "Testing variables",
         "envFile": "${workspaceFolder}/.env"
-    },
-    "java.configuration.updateBuildConfiguration": "automatic"
+    }
 }
